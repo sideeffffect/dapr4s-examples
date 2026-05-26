@@ -1,0 +1,4 @@
+out/
+.bsp/
+.idea/
+*.class

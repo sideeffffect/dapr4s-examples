@@ -1,0 +1,43 @@
+package build
+
+import mill._
+import mill.scalalib._
+import coursier.maven.MavenRepository
+
+val ScalaVersion  = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
+val Dapr4sVersion = "0.1.0-SNAPSHOT"
+
+trait Dapr4sExample extends ScalaModule:
+  def scalaVersion = ScalaVersion
+
+  // The nightly Scala compiler lives in the Scala nightlies Artifactory.
+  override def repositoriesTask = T.task:
+    super.repositoriesTask() ++ Seq(
+      MavenRepository("https://repo.scala-lang.org/artifactory/maven-nightlies"),
+    )
+
+  // Mirror the compiler flags from the dapr4s library itself.
+  // captureChecking — tracks capability captures via ^ annotations.
+  // pureFunctions   — A => B is pure by default; impure closures declare captures.
+  // experimental    — required to unlock nightly-only features.
+  override def scalacOptions = Seq(
+    "-language:experimental.captureChecking",
+    "-language:experimental.pureFunctions",
+    "-experimental",
+  )
+
+  // dapr4s is published locally via `scala-cli --power publish local .`
+  // in the scala-safe-dapr repo. Mill's Coursier resolver picks it up from
+  // ~/.ivy2/local automatically.
+  override def ivyDeps = Agg(
+    ivy"com.github.sideeffffect::dapr4s:$Dapr4sVersion",
+  )
+
+// Each directory name matches the Mill object name (backtick-quoted for hyphens).
+object `hello-state`         extends Dapr4sExample
+object `secrets-config`      extends Dapr4sExample
+object `hello-pubsub`        extends Dapr4sExample
+object `service-invocation`  extends Dapr4sExample
+object `distributed-lock`    extends Dapr4sExample
+object actors                extends Dapr4sExample
+object workflows             extends Dapr4sExample
