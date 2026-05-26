@@ -2,6 +2,7 @@ package workflows
 
 import dapr4s.*
 import scala.concurrent.duration.*
+import OrderDomain.given
 
 // ── Driver ────────────────────────────────────────────────────────────────────
 // WorkflowCapability is scoped to the DaprRuntime.run block.  Each

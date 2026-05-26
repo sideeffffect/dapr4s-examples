@@ -34,8 +34,6 @@ val LangsKey  = StateKey("greet-languages")
 // capability without making it an explicit field — it cannot be captured
 // beyond the scope where it's provided.
 
-import language.experimental.safe
-
 def greet(req: GreetRequest)(using StateCapability): GreetResponse =
   val greeting = req.language match
     case "en" => s"Hello, ${req.name}!"

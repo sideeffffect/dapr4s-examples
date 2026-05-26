@@ -83,23 +83,20 @@ class OrderProcessingWorkflow extends Workflow:
     if !reservation.reserved then
       WorkflowContext.complete(OrderResult(false, "out of stock"))
     else
-
-    // Step 2: charge payment  (saga: compensate reservation on failure)
-    val payment = WorkflowContext.callActivity[ChargePayment](order).await()
-    if !payment.charged then
-      WorkflowContext.callActivity[CancelReservation](reservation).await()
-      WorkflowContext.complete(OrderResult(false, "payment declined"))
-    else
-
-    // Step 3: dispatch  (saga: refund payment + cancel reservation on failure)
-    val shipment = WorkflowContext.callActivity[DispatchShipment](order).await()
-    if !shipment.dispatched then
-      WorkflowContext.callActivity[RefundPayment](payment).await()
-      WorkflowContext.callActivity[CancelReservation](reservation).await()
-      WorkflowContext.complete(OrderResult(false, "dispatch failed"))
-    else
-
-    WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
+      // Step 2: charge payment  (saga: compensate reservation on failure)
+      val payment = WorkflowContext.callActivity[ChargePayment](order).await()
+      if !payment.charged then
+        WorkflowContext.callActivity[CancelReservation](reservation).await()
+        WorkflowContext.complete(OrderResult(false, "payment declined"))
+      else
+        // Step 3: dispatch  (saga: refund payment + cancel reservation on failure)
+        val shipment = WorkflowContext.callActivity[DispatchShipment](order).await()
+        if !shipment.dispatched then
+          WorkflowContext.callActivity[RefundPayment](payment).await()
+          WorkflowContext.callActivity[CancelReservation](reservation).await()
+          WorkflowContext.complete(OrderResult(false, "dispatch failed"))
+        else
+          WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
 // ── Workflow server ───────────────────────────────────────────────────────────
 

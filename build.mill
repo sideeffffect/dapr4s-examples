@@ -1,20 +1,38 @@
 package build
 
-import mill._
-import mill.scalalib._
+import mill.*
+import mill.api.ModuleRef
+import mill.scalalib.*
+import mill.javalib.*
 import coursier.maven.MavenRepository
+
+// The nightly Scala compiler must be fetched from the nightlies Artifactory.
+// Mill's Zinc worker resolves the compiler separately from user dependencies,
+// so we need a custom JvmWorkerModule that knows about the nightlies repo.
+private val NightliesRepo = MavenRepository(
+  "https://repo.scala-lang.org/artifactory/maven-nightlies"
+)
+
+object nightliesJvmWorker extends JvmWorkerModule:
+  override def repositoriesTask = Task.Anon {
+    super.repositoriesTask() ++ Seq(NightliesRepo)
+  }
 
 val ScalaVersion  = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
 val Dapr4sVersion = "0.1.0-SNAPSHOT"
 
 trait Dapr4sExample extends ScalaModule:
+  // Use the nightlies-aware JVM worker for this module.
+  override def jvmWorker = ModuleRef(nightliesJvmWorker)
+
   def scalaVersion = ScalaVersion
 
-  // The nightly Scala compiler lives in the Scala nightlies Artifactory.
-  override def repositoriesTask = T.task:
-    super.repositoriesTask() ++ Seq(
-      MavenRepository("https://repo.scala-lang.org/artifactory/maven-nightlies"),
-    )
+  // Add the nightlies repo for user dependency resolution as well
+  // (dapr4s itself is resolved from ~/.ivy2/local, but its transitive
+  //  deps that come from nightlies need this repo too).
+  override def repositoriesTask = Task.Anon {
+    super.repositoriesTask() ++ Seq(NightliesRepo)
+  }
 
   // Mirror the compiler flags from the dapr4s library itself.
   // captureChecking — tracks capability captures via ^ annotations.
@@ -29,8 +47,8 @@ trait Dapr4sExample extends ScalaModule:
   // dapr4s is published locally via `scala-cli --power publish local .`
   // in the scala-safe-dapr repo. Mill's Coursier resolver picks it up from
   // ~/.ivy2/local automatically.
-  override def ivyDeps = Agg(
-    ivy"com.github.sideeffffect::dapr4s:$Dapr4sVersion",
+  override def mvnDeps = Seq(
+    mvn"com.github.sideeffffect::dapr4s:$Dapr4sVersion",
   )
 
 // Each directory name matches the Mill object name (backtick-quoted for hyphens).

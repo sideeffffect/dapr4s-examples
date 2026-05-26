@@ -1,6 +1,7 @@
 package actors
 
 import dapr4s.*
+import ActorDomain.given
 
 // ── Driver ────────────────────────────────────────────────────────────────────
 // ActorCapability is scoped per (actorType, actorId) pair.

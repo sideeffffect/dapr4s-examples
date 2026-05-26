@@ -1,6 +1,7 @@
 package serviceinvocation
 
 import dapr4s.*
+import Domain.given
 
 // ── Caller ────────────────────────────────────────────────────────────────────
 // ServiceInvocationCapability is scoped to the DaprRuntime.run block.
