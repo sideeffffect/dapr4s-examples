@@ -18,12 +18,14 @@ object nightliesJvmWorker extends JvmWorkerModule:
 val ScalaVersion  = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
 val Dapr4sVersion = "0.1.0-SNAPSHOT"
 
-trait Dapr4sModule extends ScalaModule:
+trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
   def scalaVersion = ScalaVersion
   override def repositoriesTask = Task.Anon {
     super.repositoriesTask() ++ Seq(NightliesRepo)
   }
+
+trait Dapr4sModule extends BaseModule:
   override def scalacOptions = Seq("-experimental")
   override def mvnDeps = Seq(
     mvn"com.github.sideeffffect::dapr4s:$Dapr4sVersion",
@@ -35,9 +37,6 @@ trait PureModule extends Dapr4sModule:
   )
 
 // ── Pure modules ──────────────────────────────────────────────────────────────
-// App:    business logic typed `(using DaprCapability, JsonCodec[...]) => Result`;
-//         no I/O, returns structured values for the shell to print.
-// ─────────────────────────────────────────────────────────────────────────────
 object `01-hello-state`        extends PureModule
 object `02-secrets-config`     extends PureModule
 object `03-hello-pubsub`       extends PureModule
@@ -46,21 +45,50 @@ object `05-distributed-lock`   extends PureModule
 object `06-actors`             extends PureModule
 object `07-workflows`          extends PureModule
 
+// Services files from multiple JARs must be merged (not last-wins) so that
+// gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)
+// are all registered. Mill's default rules don't do this, so we add it here.
+trait ShellModule extends Dapr4sModule:
+  override def assemblyRules: Seq[Assembly.Rule] =
+    super.assemblyRules ++ Seq(Assembly.Rule.AppendPattern("META-INF/services/.*"))
+
 // ── Shell modules ─────────────────────────────────────────────────────────────
-// Impure entry points. Derive codecs via @assumeSafe, start DaprRuntime,
-// and print the structured results from the corresponding pure module.
-// ─────────────────────────────────────────────────────────────────────────────
-object `01-hello-state-shell` extends Dapr4sModule:
+object `01-hello-state-shell` extends ShellModule:
   override def moduleDeps = Seq(`01-hello-state`)
-object `02-secrets-config-shell` extends Dapr4sModule:
+object `02-secrets-config-shell` extends ShellModule:
   override def moduleDeps = Seq(`02-secrets-config`)
-object `03-hello-pubsub-shell` extends Dapr4sModule:
+object `03-hello-pubsub-shell` extends ShellModule:
   override def moduleDeps = Seq(`03-hello-pubsub`)
-object `04-service-invocation-shell` extends Dapr4sModule:
+object `04-service-invocation-shell` extends ShellModule:
   override def moduleDeps = Seq(`04-service-invocation`)
-object `05-distributed-lock-shell` extends Dapr4sModule:
+object `05-distributed-lock-shell` extends ShellModule:
   override def moduleDeps = Seq(`05-distributed-lock`)
-object `06-actors-shell` extends Dapr4sModule:
+object `06-actors-shell` extends ShellModule:
   override def moduleDeps = Seq(`06-actors`)
-object `07-workflows-shell` extends Dapr4sModule:
+object `07-workflows-shell` extends ShellModule:
   override def moduleDeps = Seq(`07-workflows`)
+
+// ── E2E test module ───────────────────────────────────────────────────────────
+// Runs apps via `dapr run -- java -cp <assembly>` to avoid nested Mill
+// invocations. Assembly JARs are built as task dependencies and passed in
+// via system properties so the test JVM can locate them.
+// ─────────────────────────────────────────────────────────────────────────────
+object e2e extends BaseModule with TestModule.Munit:
+  override def scalacOptions = Seq("-experimental")
+  override def mvnDeps = Seq(
+    mvn"org.scalameta::munit:1.0.0",
+    mvn"com.lihaoyi::os-lib:0.11.4",
+    mvn"com.lihaoyi::upickle:4.1.0",
+  )
+  override def forkArgs: T[Seq[String]] = Task {
+    Seq(
+      s"-De2e.projectRoot=${os.pwd}",
+      s"-De2e.jar.hello-state=${`01-hello-state-shell`.assembly().path}",
+      s"-De2e.jar.secrets-config=${`02-secrets-config-shell`.assembly().path}",
+      s"-De2e.jar.hello-pubsub=${`03-hello-pubsub-shell`.assembly().path}",
+      s"-De2e.jar.service-invocation=${`04-service-invocation-shell`.assembly().path}",
+      s"-De2e.jar.distributed-lock=${`05-distributed-lock-shell`.assembly().path}",
+      s"-De2e.jar.actors=${`06-actors-shell`.assembly().path}",
+      s"-De2e.jar.workflows=${`07-workflows-shell`.assembly().path}",
+    )
+  }

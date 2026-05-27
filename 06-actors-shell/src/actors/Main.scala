@@ -12,22 +12,32 @@ object Codecs:
 
 import Codecs.given
 
-@main def actorApp(): Unit =
-  val port   = sys.env.getOrElse("APP_PORT", "8086").toInt
-  val config = DaprRuntimeConfig(
-    appServer = AppServerConfig(port = DaprPort(port)),
+private def daprConfigFromEnv(defaultAppPort: Int): DaprRuntimeConfig =
+  val appPort = sys.env.getOrElse("APP_PORT",      defaultAppPort.toString).toInt
+  val http    = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
+  val grpc    = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
+  DaprRuntimeConfig(
+    sidecar   = SidecarConfig(
+      httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
+      grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
+      grpcTlsInsecure = false,
+    ),
+    appServer = AppServerConfig(port = DaprPort(appPort)),
     actors    = ActorRuntimeConfig(
       actorIdleTimeout        = DaprDuration(10.minutes),
       drainOngoingCallTimeout = DaprDuration(10.seconds),
     ),
   )
-  println(s"=== 06 actors: CounterActor server on port $port ===\n")
+
+@main def actorApp(): Unit =
+  val config = daprConfigFromEnv(defaultAppPort = 8086)
+  println(s"=== 06 actors: CounterActor server on port ${config.appServer.port} ===\n")
   DaprRuntime.serve(config):
     counterActorApp(tickInterval = 3.seconds, tickDelay = Some(3.seconds), reminderDelay = 30.seconds)
 
 @main def actorDriver(): Unit =
   println("=== 06 actors: CounterActor driver ===\n")
-  DaprRuntime.run(DaprRuntimeConfig()):
+  DaprRuntime.run(daprConfigFromEnv(defaultAppPort = 8086)):
     println(s"initial state: ${driverGetState(DemoActorId)}")
 
     for i <- 1 to 3 do

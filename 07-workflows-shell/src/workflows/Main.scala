@@ -15,16 +15,28 @@ object Codecs:
 
 import Codecs.given
 
+private def daprConfigFromEnv(defaultAppPort: Int): DaprRuntimeConfig =
+  val appPort = sys.env.getOrElse("APP_PORT",      defaultAppPort.toString).toInt
+  val http    = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
+  val grpc    = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
+  DaprRuntimeConfig(
+    sidecar   = SidecarConfig(
+      httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
+      grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
+      grpcTlsInsecure = false,
+    ),
+    appServer = AppServerConfig(port = DaprPort(appPort)),
+  )
+
 @main def workflowServer(): Unit =
-  val port   = sys.env.getOrElse("APP_PORT", "8087").toInt
-  val config = DaprRuntimeConfig(appServer = AppServerConfig(port = DaprPort(port)))
-  println(s"=== 07 workflows: OrderProcessingWorkflow server on port $port ===\n")
+  val config = daprConfigFromEnv(defaultAppPort = 8087)
+  println(s"=== 07 workflows: OrderProcessingWorkflow server on port ${config.appServer.port} ===\n")
   DaprRuntime.serve(config):
     serverApp()
 
 @main def workflowDriver(): Unit =
   println("=== 07 workflows: OrderProcessingWorkflow driver ===\n")
-  DaprRuntime.run(DaprRuntimeConfig()):
+  DaprRuntime.run(daprConfigFromEnv(defaultAppPort = 8087)):
     val results = driverApp(WorkflowName("OrderProcessingWorkflow"), timeout = 30.seconds)
     results.foreach: r =>
       if r.timedOut then

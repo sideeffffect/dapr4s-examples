@@ -4,9 +4,18 @@ import dapr4s.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
+private def daprConfigFromEnv(): DaprRuntimeConfig =
+  val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
+  val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
+  DaprRuntimeConfig(sidecar = SidecarConfig(
+    httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
+    grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
+    grpcTlsInsecure = false,
+  ))
+
 @main def run(): Unit =
   println("=== 05 distributed-lock ===\n")
-  DaprRuntime.run(DaprRuntimeConfig()):
+  DaprRuntime.run(daprConfigFromEnv()):
     val r = distributedLockApp()
     println(s"Counter after ${r.expected} sequential workers: ${r.finalCounter}  ${if r.finalCounter == r.expected then "✓" else "✗"}")
     println()

@@ -7,9 +7,18 @@ import dapr4s.*
 // demonstrates the impure config-subscription API (callback + Thread.sleep).
 // ─────────────────────────────────────────────────────────────────────────────
 
+private def daprConfigFromEnv(): DaprRuntimeConfig =
+  val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
+  val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
+  DaprRuntimeConfig(sidecar = SidecarConfig(
+    httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
+    grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
+    grpcTlsInsecure = false,
+  ))
+
 @main def run(): Unit =
   println("=== 02 secrets-config: secrets and live configuration ===\n")
-  DaprRuntime.run(DaprRuntimeConfig()):
+  DaprRuntime.run(daprConfigFromEnv()):
 
     val (apiKey, allKeys) = readSecrets()
     println(s"MY_API_KEY   = ${apiKey.map(_.value).getOrElse("<not set>")}")
