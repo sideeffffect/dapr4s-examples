@@ -6,9 +6,6 @@ import mill.scalalib.*
 import mill.javalib.*
 import coursier.maven.MavenRepository
 
-// The nightly Scala compiler must be fetched from the nightlies Artifactory.
-// Mill's Zinc worker resolves the compiler separately from user dependencies,
-// so we need a custom JvmWorkerModule that knows about the nightlies repo.
 private val NightliesRepo = MavenRepository(
   "https://repo.scala-lang.org/artifactory/maven-nightlies"
 )
@@ -21,41 +18,49 @@ object nightliesJvmWorker extends JvmWorkerModule:
 val ScalaVersion  = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
 val Dapr4sVersion = "0.1.0-SNAPSHOT"
 
-trait Dapr4sExample extends ScalaModule:
-  // Use the nightlies-aware JVM worker for this module.
+trait Dapr4sModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
-
   def scalaVersion = ScalaVersion
-
-  // Add the nightlies repo for user dependency resolution as well
-  // (dapr4s itself is resolved from ~/.ivy2/local, but its transitive
-  //  deps that come from nightlies need this repo too).
   override def repositoriesTask = Task.Anon {
     super.repositoriesTask() ++ Seq(NightliesRepo)
   }
-
-  // Mirror the compiler flags from the dapr4s library itself.
-  // captureChecking — tracks capability captures via ^ annotations.
-  // pureFunctions   — A => B is pure by default; impure closures declare captures.
-  // experimental    — required to unlock nightly-only features.
-  override def scalacOptions = Seq(
-    "-language:experimental.captureChecking",
-    "-language:experimental.pureFunctions",
-    "-experimental",
-  )
-
-  // dapr4s is published locally via `scala-cli --power publish local .`
-  // in the scala-safe-dapr repo. Mill's Coursier resolver picks it up from
-  // ~/.ivy2/local automatically.
+  override def scalacOptions = Seq("-experimental")
   override def mvnDeps = Seq(
     mvn"com.github.sideeffffect::dapr4s:$Dapr4sVersion",
   )
 
-// Each directory name matches the Mill object name (backtick-quoted for hyphens).
-object `hello-state`         extends Dapr4sExample
-object `secrets-config`      extends Dapr4sExample
-object `hello-pubsub`        extends Dapr4sExample
-object `service-invocation`  extends Dapr4sExample
-object `distributed-lock`    extends Dapr4sExample
-object actors                extends Dapr4sExample
-object workflows             extends Dapr4sExample
+trait PureModule extends Dapr4sModule:
+  override def scalacOptions = super.scalacOptions() ++ Seq(
+    "-language:experimental.safe",
+  )
+
+// ── Pure modules ──────────────────────────────────────────────────────────────
+// App:    business logic typed `(using DaprCapability, JsonCodec[...]) => Result`;
+//         no I/O, returns structured values for the shell to print.
+// ─────────────────────────────────────────────────────────────────────────────
+object `01-hello-state`        extends PureModule
+object `02-secrets-config`     extends PureModule
+object `03-hello-pubsub`       extends PureModule
+object `04-service-invocation` extends PureModule
+object `05-distributed-lock`   extends PureModule
+object `06-actors`             extends PureModule
+object `07-workflows`          extends PureModule
+
+// ── Shell modules ─────────────────────────────────────────────────────────────
+// Impure entry points. Derive codecs via @assumeSafe, start DaprRuntime,
+// and print the structured results from the corresponding pure module.
+// ─────────────────────────────────────────────────────────────────────────────
+object `01-hello-state-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`01-hello-state`)
+object `02-secrets-config-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`02-secrets-config`)
+object `03-hello-pubsub-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`03-hello-pubsub`)
+object `04-service-invocation-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`04-service-invocation`)
+object `05-distributed-lock-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`05-distributed-lock`)
+object `06-actors-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`06-actors`)
+object `07-workflows-shell` extends Dapr4sModule:
+  override def moduleDeps = Seq(`07-workflows`)

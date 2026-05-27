@@ -14,13 +14,17 @@ it statically via capture checking.
 
 ## What "Safe Scala" means here
 
-Three experimental Scala 3 features work together:
+The pure modules are compiled with `-language:experimental.safe`, which enables three things
+at once:
 
-| Feature | How enabled | What it enforces |
-|---|---|---|
-| Capture Checking | `-language:experimental.captureChecking` (scalacOptions) | Values carry a set of *captures* (`^`). A `StateCapability^{cap}` cannot be stored anywhere that outlives `cap`. |
-| Pure Functions | `-language:experimental.pureFunctions` (scalacOptions) | `A => B` is pure by default. Closures that capture capabilities get a richer type showing what they capture. |
-| Safe mode | `import language.experimental.safe` (per-file) | The strictest level: enables both of the above and additionally forbids calling impure code outside `@assumeSafe` boundaries. Used in pure business-logic files. |
+| What | Effect |
+|---|---|
+| Capture checking | Values carry a set of *captures* (`^`). A `StateCapability^{cap}` cannot be stored anywhere that outlives `cap`. |
+| Pure functions | `A => B` is pure by default. Closures that capture capabilities get a richer type showing what they capture. |
+| Impure-call rejection | Calling functions tagged `@rejectSafe` (e.g. `println`, `Thread.sleep`) is a compile error inside safe code. |
+
+Shell modules are compiled with `-experimental` only — enough to call `@experimental` dapr4s
+APIs, but without any safe-mode restrictions.
 
 ### What this looks like in practice
 
@@ -41,10 +45,26 @@ Code that crosses the Java boundary (upickle macro derivations, Dapr SDK interna
 be checked by the Scala 3 capture checker. The `@scala.caps.assumeSafe` annotation says
 *"I assert this is safe at this boundary — trust me."*
 
-In these examples, `@assumeSafe` appears in exactly two places:
-1. `given upickle.default.ReadWriter[T] = upickle.default.macroRW` — upickle is not
-   capture-aware, but reading/writing JSON is a pure operation.
-2. Never anywhere else — the dapr4s library already handles all other SDK boundaries.
+In these examples, `@assumeSafe` appears in exactly one place per shell module:
+- `given upickle.default.ReadWriter[T] = upickle.default.macroRW` — upickle is not
+  capture-aware, but reading/writing JSON is a pure operation.
+
+---
+
+## Module structure
+
+Each example is split into two Mill modules:
+
+| Module | Compiled with | Purpose |
+|---|---|---|
+| `<name>` | `-language:experimental.safe` | Pure business logic. No I/O. Returns structured result types. |
+| `<name>-shell` | `-experimental` | Impure entry point. Derives codecs, starts `DaprRuntime`, prints results. |
+
+Source files live under `src/<package>/` within each module directory, e.g.:
+```
+01-hello-state/src/hellostate/App.scala
+01-hello-state-shell/src/hellostate/Main.scala
+```
 
 ---
 
@@ -74,7 +94,7 @@ No server needed. Demonstrates state CRUD, ETag-guarded saves, and transactions.
 ```
 dapr run --app-id hello-state \
          --components-path ./components \
-         -- mill hello-state.run
+         -- mill 01-hello-state-shell.run
 ```
 
 ### 02 — secrets-config
@@ -89,7 +109,7 @@ export MY_API_KEY="s3cr3t-value"
 ```
 dapr run --app-id secrets-config \
          --components-path ./components \
-         -- mill secrets-config.run
+         -- mill 02-secrets-config-shell.run
 ```
 
 ### 03 — hello-pubsub
@@ -102,12 +122,12 @@ Start the subscriber first, then the publisher in a second terminal.
 dapr run --app-id pubsub-subscriber \
          --app-port 8083 \
          --components-path ./components \
-         -- mill hello-pubsub.runMain hellopubsub.subscriber
+         -- mill 03-hello-pubsub-shell.runMain hellopubsub.subscriber
 
 # Terminal 2 — publisher
 dapr run --app-id pubsub-publisher \
          --components-path ./components \
-         -- mill hello-pubsub.runMain hellopubsub.publisher
+         -- mill 03-hello-pubsub-shell.runMain hellopubsub.publisher
 ```
 
 ### 04 — service-invocation
@@ -119,23 +139,23 @@ Two processes: a callee (HTTP server with InvocationRoutes) and a caller (client
 dapr run --app-id greeting-service \
          --app-port 8084 \
          --components-path ./components \
-         -- mill service-invocation.runMain serviceinvocation.callee
+         -- mill 04-service-invocation-shell.runMain serviceinvocation.callee
 
 # Terminal 2 — caller
 dapr run --app-id greeting-client \
          --components-path ./components \
-         -- mill service-invocation.runMain serviceinvocation.caller
+         -- mill 04-service-invocation-shell.runMain serviceinvocation.caller
 ```
 
 ### 05 — distributed-lock
 
-No server. Spawns concurrent threads; shows two approaches to mutual exclusion:
-`DistributedLockCapability.tryLock` and `StateCapability.saveWithETag`.
+No server. Simulates sequential workers under a distributed lock and demonstrates
+double-acquire behaviour.
 
 ```
 dapr run --app-id distributed-lock \
          --components-path ./components \
-         -- mill distributed-lock.run
+         -- mill 05-distributed-lock-shell.run
 ```
 
 ### 06 — actors
@@ -147,12 +167,12 @@ Two processes: actor server (registers the actor type) and a driver.
 dapr run --app-id counter-actor \
          --app-port 8086 \
          --components-path ./components \
-         -- mill actors.runMain actors.actorApp
+         -- mill 06-actors-shell.runMain actors.actorApp
 
 # Terminal 2 — driver
 dapr run --app-id actor-driver \
          --components-path ./components \
-         -- mill actors.runMain actors.actorDriver
+         -- mill 06-actors-shell.runMain actors.actorDriver
 ```
 
 ### 07 — workflows
@@ -164,45 +184,46 @@ Two processes: workflow server and a driver that submits and polls.
 dapr run --app-id order-workflow \
          --app-port 8087 \
          --components-path ./components \
-         -- mill workflows.runMain workflows.workflowApp
+         -- mill 07-workflows-shell.runMain workflows.workflowServer
 
 # Terminal 2 — driver
 dapr run --app-id workflow-driver \
          --components-path ./components \
-         -- mill workflows.runMain workflows.workflowDriver
+         -- mill 07-workflows-shell.runMain workflows.workflowDriver
 ```
 
 ---
 
 ## Example progression
 
-| # | Directory | Dapr feature | Safe Scala highlight |
-|---|---|---|---|
-| 1 | `hello-state/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` |
-| 2 | `secrets-config/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures |
-| 3 | `hello-pubsub/` | Pub/sub publish + subscribe | Handler's `PubSubCapability` context-threaded via `?=>` |
-| 4 | `service-invocation/` | HTTP service-to-service calls | `InvokerCapability` and typed `InvocationRoute` handlers |
-| 5 | `distributed-lock/` | Distributed lock + ETag concurrency | Lock capability ensures try/unlock pairing |
-| 6 | `actors/` | Virtual actors, timers, reminders | `ActorContext` is a per-invocation capability; actor state is isolated |
-| 7 | `workflows/` | Durable workflows, saga, compensation | `WorkflowContext` enables deterministic replay; activity results are `Task[O]` |
+| # | Pure module | Shell module | Dapr feature | Safe Scala highlight |
+|---|---|---|---|---|
+| 1 | `01-hello-state/` | `01-hello-state-shell/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` |
+| 2 | `02-secrets-config/` | `02-secrets-config-shell/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures |
+| 3 | `03-hello-pubsub/` | `03-hello-pubsub-shell/` | Pub/sub publish + subscribe | Handler's `PubSubCapability` context-threaded via `?=>` |
+| 4 | `04-service-invocation/` | `04-service-invocation-shell/` | HTTP service-to-service calls | `ServiceInvocationCapability` and typed `InvocationRoute` handlers |
+| 5 | `05-distributed-lock/` | `05-distributed-lock-shell/` | Distributed lock | Lock capability ensures try/unlock pairing |
+| 6 | `06-actors/` | `06-actors-shell/` | Virtual actors, timers, reminders | `ActorContext` is a per-invocation capability; actor state is isolated |
+| 7 | `07-workflows/` | `07-workflows-shell/` | Durable workflows, saga, compensation | `WorkflowContext` enables deterministic replay; activity results are `Task[O]` |
 
 ---
 
 ## Build
 
 ```
-mill __.compile              # compile everything
-mill hello-state.run         # run a single-main module
-mill actors.runMain actors.actorApp   # run a named main in a multi-main module
+mill __.compile                                           # compile everything
+mill 01-hello-state-shell.run                           # run a single-main shell
+mill 06-actors-shell.runMain actors.actorApp            # run a named main in a multi-main shell
 ```
 
 ## Code conventions
 
-- `@scala.caps.assumeSafe` is on upickle `given` derivations only.
-- Files containing pure business logic (handlers, domain rules) carry
-  `import language.experimental.safe` at the top.
-- `@main def` entry points do **not** carry the safe import — they are the
-  impure shell (println, Thread.sleep, environment reads).
-- All capability access goes through `DaprCapability.state(store) { ... }`
-  companion-object scoping blocks, never through raw `summon[StateCapability]`
-  stored in a `val`.
+- `@scala.caps.assumeSafe` appears only on upickle `given` derivations in shell modules.
+- Pure modules (`PureModule` in `build.mill`) are compiled with `-language:experimental.safe`;
+  no per-file feature import is needed or present.
+- Shell modules (`Dapr4sModule`) are compiled with `-experimental` only — impure code is fine.
+- `DaprCapability.state(store) { ... }` and similar companion-object scoping blocks open
+  capability scopes inside pure functions; raw `summon[StateCapability]` stored in a `val`
+  is never used.
+- `JsonCodec[T]` instances are derived in shells (macro expansion is impure) and passed into
+  pure functions as `using` parameters.
