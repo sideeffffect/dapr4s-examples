@@ -1,36 +1,28 @@
 package e2e
 
 class ActorsTest extends E2ESuite:
-  val AppPort  = 8086
-  val DaprPort = 3506
 
-  // Each test case uses its own unique actor ID so tests are isolated without
-  // needing a Redis flush between them.  A fresh actor ID → no prior state in
-  // the state store → count/totalIncrements both start at 0.
-  val AppId = "e2e-actors"
+  override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
-  var serverProc: os.SubProcess = null
+  var infra: ServerInfra = null
 
   override def beforeAll(): Unit =
     super.beforeAll()
-    serverProc = Harness.spawnServer(
-      appId     = AppId,
+    infra = ServerInfra.start(
+      appId     = "e2e-actors",
       jarModule = "actors",
       mainClass = "actors.actorApp",
-      appPort   = AppPort,
-      daprPort  = DaprPort,
     )
-    Harness.waitForPort(DaprPort)
-    Harness.waitForPort(AppPort)
-    Thread.sleep(3_000)  // placement service needs a moment to register the actor type
+    // placement service needs a moment to register the actor type after daprd connects
+    Thread.sleep(3_000)
 
   override def afterAll(): Unit =
-    if serverProc != null then Harness.stopApp(AppId, serverProc)
+    if infra != null then infra.stop()
     super.afterAll()
 
   private def actorMethod(actorId: String, method: String, body: String = "{}"): (Int, String) =
     DaprHttp.put(
-      DaprPort,
+      infra.daprHttpPort,
       s"/v1.0/actors/CounterActor/$actorId/method/$method",
       body,
     )

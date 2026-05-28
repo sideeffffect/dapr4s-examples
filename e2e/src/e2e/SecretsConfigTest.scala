@@ -2,17 +2,22 @@ package e2e
 
 class SecretsConfigTest extends E2ESuite:
 
-  // The secrets-config shell has a 15 s config-subscription demo at the end;
-  // allow up to 30 s total.
   override val munitTimeout = scala.concurrent.duration.Duration(30, "s")
 
+  var infra: OneShotInfra = null
+
+  override def beforeAll(): Unit =
+    super.beforeAll()
+    infra = OneShotInfra.start("e2e-secrets", sidecarEnv = Map("MY_API_KEY" -> "e2e-test-secret"))
+
+  override def afterAll(): Unit =
+    if infra != null then infra.stop()
+    super.afterAll()
+
   test("reads secret from environment") {
-    val out = Harness.runOneShot(
-      appId     = "e2e-secrets",
+    val out = infra.run(
       jarModule = "secrets-config",
       mainClass = "secretsconfig.run",
-      daprPort  = 3502,
-      envVars   = Map("MY_API_KEY" -> "e2e-test-secret"),
       timeoutMs = 30_000,
     )
     assert(out.contains("MY_API_KEY   = e2e-test-secret"), clue(out))
@@ -20,16 +25,12 @@ class SecretsConfigTest extends E2ESuite:
   }
 
   test("reads config items from Redis") {
-    // Pre-populate the Redis config store (plain string values).
-    E2EInfra.redisCmd("SET", "greeting",    "Hello from E2E!")
-    E2EInfra.redisCmd("SET", "max-retries", "7")
+    infra.redisExec("SET", "greeting",    "Hello from E2E!")
+    infra.redisExec("SET", "max-retries", "7")
 
-    val out = Harness.runOneShot(
-      appId     = "e2e-config",
+    val out = infra.run(
       jarModule = "secrets-config",
       mainClass = "secretsconfig.run",
-      daprPort  = 3502,
-      envVars   = Map("MY_API_KEY" -> "dummy"),
       timeoutMs = 30_000,
     )
     assert(out.contains("config greeting"),    clue(out))

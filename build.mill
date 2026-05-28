@@ -69,9 +69,9 @@ object `07-workflows-shell` extends ShellModule:
   override def moduleDeps = Seq(`07-workflows`)
 
 // ── E2E test module ───────────────────────────────────────────────────────────
-// Runs apps via `dapr run -- java -cp <assembly>` to avoid nested Mill
-// invocations. Assembly JARs are built as task dependencies and passed in
-// via system properties so the test JVM can locate them.
+// Runs Dapr infrastructure via Docker Compose + Testcontainers (no dapr CLI
+// required on the host). Assembly JARs are built as task dependencies and
+// passed in via system properties so the test JVM can locate them.
 // ─────────────────────────────────────────────────────────────────────────────
 object e2e extends BaseModule with TestModule.Munit:
   override def scalacOptions = Seq("-experimental")
@@ -79,10 +79,16 @@ object e2e extends BaseModule with TestModule.Munit:
     mvn"org.scalameta::munit:1.0.0",
     mvn"com.lihaoyi::os-lib:0.11.4",
     mvn"com.lihaoyi::upickle:4.1.0",
+    mvn"org.testcontainers:testcontainers:1.21.4",
   )
+  // millSourcePath = {workspace}/e2e; one level up is the workspace root.
+  private def workspaceRoot: os.Path = moduleDir / os.up
+  override def forkEnv: T[Map[String, String]] = Task {
+    super.forkEnv() ++ Map("DOCKER_HOST" -> "unix:///var/run/docker.sock")
+  }
   override def forkArgs: T[Seq[String]] = Task {
     Seq(
-      s"-De2e.projectRoot=${os.pwd}",
+      s"-De2e.projectRoot=${workspaceRoot}",
       s"-De2e.jar.hello-state=${`01-hello-state-shell`.assembly().path}",
       s"-De2e.jar.secrets-config=${`02-secrets-config-shell`.assembly().path}",
       s"-De2e.jar.hello-pubsub=${`03-hello-pubsub-shell`.assembly().path}",

@@ -14,11 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Cache Mill and Coursier
         uses: actions/cache@v4
@@ -32,29 +32,12 @@ jobs:
             mill-${{ hashFiles('.mill-version', 'build.mill') }}-
             mill-
 
-      - name: Install Dapr CLI
-        uses: dapr/setup-dapr@v2
-
-      - name: Initialize Dapr runtime
-        # dapr init pulls Redis, placement, scheduler, and zipkin as Docker containers
-        # and installs the daprd binary to ~/.dapr/bin.
-        run: dapr init
-
-      - name: Wait for Dapr's Redis to be ready
-        run: |
-          echo "Waiting for Redis to accept connections..."
-          until docker exec dapr_redis redis-cli PING 2>/dev/null | grep -q PONG; do
-            sleep 2
-          done
-          echo "Redis is ready."
-
       - name: Build assembly JARs
-        # Pre-build all fat JARs so the test run itself doesn't need to compile.
-        # This step also surfaces compilation errors before the long E2E run.
         run: ./mill __.assembly
 
       - name: Run E2E tests
-        # dapr and daprd are on PATH via dapr/setup-dapr and dapr init.
+        # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
+        # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.
         run: ./mill e2e.testForked
 
       - name: Upload test results on failure

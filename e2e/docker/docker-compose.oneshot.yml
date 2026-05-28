@@ -1,0 +1,47 @@
+# Infrastructure for one-shot E2E tests.
+# The app process runs on the host (no app container here); it connects to the
+# daprd sidecar via host-mapped ports passed via DAPR_HTTP_PORT / DAPR_GRPC_PORT.
+# No -app-port is set on daprd because one-shot apps do not expose an HTTP server.
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  dapr:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./daprd"
+      - "-app-id=${APP_ID}"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    # Variables listed here (without a value) are forwarded from the Compose
+    # runner's environment into the daprd container. This is needed for the
+    # secretstores.local.env component which reads secrets from daprd's env.
+    environment:
+      - MY_API_KEY
+    volumes:
+      - ./components:/components
+    ports:
+      - "3500"
+      - "50001"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+networks:
+  dapr-net:

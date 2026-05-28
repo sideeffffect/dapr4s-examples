@@ -1,0 +1,66 @@
+# Infrastructure for long-lived server E2E tests.
+# The app JVM runs inside the `app` container. The daprd sidecar shares the
+# app container's network namespace (network_mode: service:app), so the app
+# reaches daprd at localhost:3500/50001 and daprd reaches the app at localhost:8080.
+# Testcontainers maps ports 8080 and 3500 from the `app` container to random host ports.
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  app:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_PATH}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "${MAIN_CLASS}"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    # Expose both the app port and daprd port (daprd shares this network namespace).
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  dapr:
+    image: daprio/dapr:1.17.7
+    # Shares the app container's network namespace: daprd binds localhost:3500/50001
+    # which the app sees as localhost, and daprd reaches the app at localhost:8080.
+    # daprd starts alongside the app (service_started) and retries connecting to the
+    # app; Testcontainers waits for daprd's /v1.0/healthz and the app's port 8080.
+    network_mode: "service:app"
+    command:
+      - "./daprd"
+      - "-app-id=${APP_ID}"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - ./components:/components
+    depends_on:
+      app:
+        condition: service_started
+
+networks:
+  dapr-net:
