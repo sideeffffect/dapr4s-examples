@@ -4,18 +4,11 @@ class SecretsConfigTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(30, "s")
 
-  var infra: OneShotInfra = null
-
-  override def beforeAll(): Unit =
-    super.beforeAll()
-    infra = OneShotInfra.start("e2e-secrets", sidecarEnv = Map("MY_API_KEY" -> "e2e-test-secret"))
-
-  override def afterAll(): Unit =
-    if infra != null then infra.stop()
-    super.afterAll()
+  val infra = oneShot("e2e-secrets", sidecarEnv = Map("MY_API_KEY" -> "e2e-test-secret"))
+  override def munitFixtures = List(infra)
 
   test("reads secret from environment") {
-    val out = infra.run(
+    val out = infra().run(
       jarModule = "secrets-config",
       mainClass = "secretsconfig.run",
       timeoutMs = 30_000,
@@ -25,10 +18,10 @@ class SecretsConfigTest extends E2ESuite:
   }
 
   test("reads config items from Redis") {
-    infra.redisExec("SET", "greeting",    "Hello from E2E!")
-    infra.redisExec("SET", "max-retries", "7")
+    infra().redisExec("SET", "greeting",    "Hello from E2E!")
+    infra().redisExec("SET", "max-retries", "7")
 
-    val out = infra.run(
+    val out = infra().run(
       jarModule = "secrets-config",
       mainClass = "secretsconfig.run",
       timeoutMs = 30_000,

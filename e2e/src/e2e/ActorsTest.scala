@@ -4,25 +4,18 @@ class ActorsTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
-  var infra: ServerInfra = null
-
-  override def beforeAll(): Unit =
-    super.beforeAll()
-    infra = ServerInfra.start(
-      appId     = "e2e-actors",
-      jarModule = "actors",
-      mainClass = "actors.actorApp",
-    )
+  val infra = server(
+    appId     = "e2e-actors",
+    jarModule = "actors",
+    mainClass = "actors.actorApp",
     // placement service needs a moment to register the actor type after daprd connects
-    Thread.sleep(3_000)
-
-  override def afterAll(): Unit =
-    if infra != null then infra.stop()
-    super.afterAll()
+    postStart = _ => Thread.sleep(3_000),
+  )
+  override def munitFixtures = List(infra)
 
   private def actorMethod(actorId: String, method: String, body: String = "{}"): (Int, String) =
     DaprHttp.put(
-      infra.daprHttpPort,
+      infra().daprHttpPort,
       s"/v1.0/actors/CounterActor/$actorId/method/$method",
       body,
     )
