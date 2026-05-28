@@ -17,13 +17,17 @@ import java.util.concurrent.Semaphore
  * host resources and cause random healthz timeouts.
  */
 abstract class E2ESuite extends munit.FunSuite:
+  // True only if we actually acquired the permit; guards the matching release.
+  private var lockAcquired = false
+
   override def beforeAll(): Unit =
     super.beforeAll()
     E2ESuite.lock.acquire()
+    lockAcquired = true
 
   override def afterAll(): Unit =
     try super.afterAll()
-    finally E2ESuite.lock.release()
+    finally if lockAcquired then E2ESuite.lock.release()
 
 object E2ESuite:
   private val lock = Semaphore(1)

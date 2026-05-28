@@ -8,6 +8,17 @@ import java.time.Duration
 private def composeFile(name: String): File =
   File(s"${System.getProperty("e2e.projectRoot")}/e2e/docker/$name")
 
+// Generates e2e/docker/components/ from the canonical root components/,
+// substituting localhost → redis so daprd reaches the Redis Docker service.
+// e2e/docker/components/ is gitignored; root components/ is the source of truth.
+private def prepareComponents(): Unit =
+  val src  = os.Path(System.getProperty("e2e.projectRoot")) / "components"
+  val dest = os.Path(System.getProperty("e2e.projectRoot")) / "e2e" / "docker" / "components"
+  os.makeDir.all(dest)
+  os.list(src).filter(_.ext == "yaml").foreach { f =>
+    os.write.over(dest / f.last, os.read(f).replace("localhost:6379", "redis:6379"))
+  }
+
 // Matches "dapr initialized. Status: Running." in daprd's stdout.
 private val DaprReadyPattern = ".*dapr initialized. Status: Running.*\\n"
 
@@ -50,6 +61,7 @@ object OneShotInfra:
   def start(appId: String, sidecarEnv: Map[String, String] = Map.empty): OneShotInfra =
     val c = ComposeContainer(composeFile("docker-compose.oneshot.yml"))
     c.withLocalCompose(true)
+    prepareComponents()
     c.withEnv("APP_ID", appId)
     sidecarEnv.foreach((k, v) => c.withEnv(k, v))
     // Expose ports for getServicePort(); Wait.forListeningPort() is the default.
@@ -85,6 +97,7 @@ object ServerInfra:
   def start(appId: String, jarModule: String, mainClass: String): ServerInfra =
     val c = ComposeContainer(composeFile("docker-compose.server.yml"))
     c.withLocalCompose(true)
+    prepareComponents()
     c.withEnv("APP_ID",     appId)
     c.withEnv("JAR_PATH",   Harness.jarFor(jarModule).toString)
     c.withEnv("MAIN_CLASS", mainClass)
