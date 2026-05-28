@@ -8,6 +8,9 @@ import java.time.Duration
 private def composeFile(name: String): File =
   File(s"${System.getProperty("e2e.projectRoot")}/e2e/docker/$name")
 
+// Matches "dapr initialized. Status: Running." in daprd's stdout.
+private val DaprReadyPattern = ".*dapr initialized. Status: Running.*\\n"
+
 /**
  * Dapr infrastructure for one-shot tests.
  *
@@ -49,10 +52,13 @@ object OneShotInfra:
     c.withLocalCompose(true)
     c.withEnv("APP_ID", appId)
     sidecarEnv.foreach((k, v) => c.withEnv(k, v))
-    c.withExposedService("dapr", 3500,
-      Wait.forHttp("/v1.0/healthz").forStatusCode(204)
-        .withStartupTimeout(Duration.ofMinutes(5)))
+    // Expose ports for getServicePort(); Wait.forListeningPort() is the default.
+    c.withExposedService("dapr", 3500)
     c.withExposedService("dapr", 50001)
+    // Log-based wait is instant (daprd logs this line ~60ms after it starts).
+    c.waitingFor("dapr",
+      Wait.forLogMessage(DaprReadyPattern, 1)
+        .withStartupTimeout(Duration.ofMinutes(5)))
     c.start()
     new OneShotInfra(c)
 
@@ -82,11 +88,14 @@ object ServerInfra:
     c.withEnv("APP_ID",     appId)
     c.withEnv("JAR_PATH",   Harness.jarFor(jarModule).toString)
     c.withEnv("MAIN_CLASS", mainClass)
+    // Expose ports for getServicePort(); Wait.forListeningPort() is the default.
     // Port 3500 is on the `app` container because daprd shares its network namespace.
-    c.withExposedService("app", 3500,
-      Wait.forHttp("/v1.0/healthz").forStatusCode(204)
+    c.withExposedService("app", 3500)
+    c.withExposedService("app", 8080)
+    // Log-based wait: daprd logs "dapr initialized" the moment it's ready.
+    // This avoids HTTP polling and works regardless of Docker daemon load.
+    c.waitingFor("dapr",
+      Wait.forLogMessage(DaprReadyPattern, 1)
         .withStartupTimeout(Duration.ofMinutes(5)))
-    c.withExposedService("app", 8080,
-      Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(5)))
     c.start()
     new ServerInfra(c)
