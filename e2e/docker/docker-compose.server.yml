@@ -57,7 +57,10 @@ services:
       - "-placement-host-address=placement:50005"
       - "-scheduler-host-address=scheduler:50006"
     volumes:
-      - ./components:/components
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
     depends_on:
       app:
         condition: service_started

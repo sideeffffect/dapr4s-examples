@@ -36,7 +36,10 @@ services:
     environment:
       - MY_API_KEY
     volumes:
-      - ./components:/components
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
     ports:
       - "3500"
       - "50001"

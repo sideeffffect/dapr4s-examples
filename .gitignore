@@ -2,4 +2,3 @@ out/
 .bsp/
 .idea/
 *.class
-e2e/docker/components/

@@ -8,16 +8,18 @@ import java.time.Duration
 private def composeFile(name: String): File =
   File(s"${System.getProperty("e2e.projectRoot")}/e2e/docker/$name")
 
-// Generates e2e/docker/components/ from the canonical root components/,
-// substituting localhost → redis so daprd reaches the Redis Docker service.
-// e2e/docker/components/ is gitignored; root components/ is the source of truth.
-private def prepareComponents(): Unit =
+// Copies root components/ into a temp dir, substituting localhost → redis
+// so daprd in Docker reaches the Redis container by its service name.
+// Returns the temp dir path for use as COMPONENTS_PATH in the compose env.
+private def prepareComponents(): os.Path =
   val src  = os.Path(System.getProperty("e2e.projectRoot")) / "components"
-  val dest = os.Path(System.getProperty("e2e.projectRoot")) / "e2e" / "docker" / "components"
-  os.makeDir.all(dest)
+  val dest = os.temp.dir(prefix = "dapr-e2e-components")
+  // Docker's daprd runs as a different uid; world-read+execute is required.
+  os.perms.set(dest, "rwxr-xr-x")
   os.list(src).filter(_.ext == "yaml").foreach { f =>
-    os.write.over(dest / f.last, os.read(f).replace("localhost:6379", "redis:6379"))
+    os.write(dest / f.last, os.read(f).replace("localhost:6379", "redis:6379"))
   }
+  dest
 
 // Matches "dapr initialized. Status: Running." in daprd's stdout.
 private val DaprReadyPattern = ".*dapr initialized. Status: Running.*\\n"
@@ -61,8 +63,8 @@ object OneShotInfra:
   def start(appId: String, sidecarEnv: Map[String, String] = Map.empty): OneShotInfra =
     val c = ComposeContainer(composeFile("docker-compose.oneshot.yml"))
     c.withLocalCompose(true)
-    prepareComponents()
-    c.withEnv("APP_ID", appId)
+    c.withEnv("APP_ID",          appId)
+    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
     sidecarEnv.foreach((k, v) => c.withEnv(k, v))
     // Expose ports for getServicePort(); Wait.forListeningPort() is the default.
     c.withExposedService("dapr", 3500)
@@ -97,10 +99,10 @@ object ServerInfra:
   def start(appId: String, jarModule: String, mainClass: String): ServerInfra =
     val c = ComposeContainer(composeFile("docker-compose.server.yml"))
     c.withLocalCompose(true)
-    prepareComponents()
-    c.withEnv("APP_ID",     appId)
-    c.withEnv("JAR_PATH",   Harness.jarFor(jarModule).toString)
-    c.withEnv("MAIN_CLASS", mainClass)
+    c.withEnv("APP_ID",          appId)
+    c.withEnv("JAR_PATH",        Harness.jarFor(jarModule).toString)
+    c.withEnv("MAIN_CLASS",      mainClass)
+    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
     // Expose ports for getServicePort(); Wait.forListeningPort() is the default.
     // Port 3500 is on the `app` container because daprd shares its network namespace.
     c.withExposedService("app", 3500)
