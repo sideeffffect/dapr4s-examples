@@ -4,7 +4,7 @@ class ActorsTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
-  val infra = server(
+  val infra = ServerInfra(
     appId     = "e2e-actors",
     jarModule = "actors",
     mainClass = "actors.actorApp",
@@ -15,7 +15,7 @@ class ActorsTest extends E2ESuite:
 
   private def actorMethod(actorId: String, method: String, body: String = "{}"): (Int, String) =
     DaprHttp.put(
-      infra().daprHttpPort,
+      infra.daprHttpPort,
       s"/v1.0/actors/CounterActor/$actorId/method/$method",
       body,
     )

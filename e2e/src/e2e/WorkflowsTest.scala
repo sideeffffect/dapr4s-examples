@@ -3,7 +3,7 @@ package e2e
 class WorkflowsTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
-  val infra = server(
+  val infra = ServerInfra(
     appId     = "e2e-workflows",
     jarModule = "workflows",
     mainClass = "workflows.workflowServer",
@@ -13,7 +13,7 @@ class WorkflowsTest extends E2ESuite:
 
   private def startWorkflow(instanceId: String, input: String): Int =
     val (status, _) = DaprHttp.post(
-      infra().daprHttpPort,
+      infra.daprHttpPort,
       s"/v1.0-beta1/workflows/dapr/OrderProcessingWorkflow/start?instanceID=$instanceId",
       input,
     )
@@ -22,7 +22,7 @@ class WorkflowsTest extends E2ESuite:
   private def pollUntilComplete(instanceId: String, timeoutMs: Long = 30_000): ujson.Value =
     val deadline = System.currentTimeMillis() + timeoutMs
     while System.currentTimeMillis() < deadline do
-      val (_, body) = DaprHttp.get(infra().daprHttpPort, s"/v1.0-beta1/workflows/dapr/$instanceId")
+      val (_, body) = DaprHttp.get(infra.daprHttpPort, s"/v1.0-beta1/workflows/dapr/$instanceId")
       val json      = ujson.read(body)
       val status    = json.obj.get("runtimeStatus").map(_.str).getOrElse("")
       if status == "COMPLETED" || status == "FAILED" || status == "TERMINATED" then
