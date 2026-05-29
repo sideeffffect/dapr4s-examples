@@ -12,11 +12,11 @@ object Codecs:
 
 import Codecs.given
 
-private def daprConfigFromEnv(defaultAppPort: Int): DaprRuntimeConfig =
+private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val appPort = sys.env.getOrElse("APP_PORT", defaultAppPort.toString).toInt
   val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
   val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
-  DaprRuntimeConfig(
+  DaprConfig(
     sidecar = SidecarConfig(
       httpEndpoint = java.net.URI.create(s"http://localhost:$http"),
       grpcEndpoint = java.net.URI.create(s"http://localhost:$grpc"),
