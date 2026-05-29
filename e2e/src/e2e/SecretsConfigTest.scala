@@ -14,11 +14,11 @@ class SecretsConfigTest extends E2ESuite:
       timeoutMs = 30_000,
     )
     assert(out.contains("MY_API_KEY   = e2e-test-secret"), clue(out))
-    assert(out.contains("all secrets:"),                   clue(out))
+    assert(out.contains("all secrets:"), clue(out))
   }
 
   test("reads config items from Redis") {
-    infra.redisExec("SET", "greeting",    "Hello from E2E!")
+    infra.redisExec("SET", "greeting", "Hello from E2E!")
     infra.redisExec("SET", "max-retries", "7")
 
     val out = infra.run(
@@ -26,6 +26,6 @@ class SecretsConfigTest extends E2ESuite:
       mainClass = "secretsconfig.run",
       timeoutMs = 30_000,
     )
-    assert(out.contains("config greeting"),    clue(out))
+    assert(out.contains("config greeting"), clue(out))
     assert(out.contains("config max-retries"), clue(out))
   }

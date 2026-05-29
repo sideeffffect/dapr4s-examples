@@ -6,7 +6,8 @@ import java.time.Duration
 
 /** Thin wrapper around Java's HttpClient for calling the Dapr sidecar HTTP API. */
 object DaprHttp:
-  private val client = JHttpClient.newBuilder()
+  private val client = JHttpClient
+    .newBuilder()
     .connectTimeout(Duration.ofSeconds(10))
     .build()
 
@@ -15,27 +16,30 @@ object DaprHttp:
 
   def get(daprPort: Int, path: String): (Int, String) =
     val req = withTimeout(
-      HttpRequest.newBuilder(URI.create(s"http://localhost:$daprPort$path"))
+      HttpRequest
+        .newBuilder(URI.create(s"http://localhost:$daprPort$path"))
         .GET()
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json"),
     ).build()
     val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
     (resp.statusCode(), resp.body())
 
   def post(daprPort: Int, path: String, body: String = ""): (Int, String) =
     val req = withTimeout(
-      HttpRequest.newBuilder(URI.create(s"http://localhost:$daprPort$path"))
+      HttpRequest
+        .newBuilder(URI.create(s"http://localhost:$daprPort$path"))
         .POST(HttpRequest.BodyPublishers.ofString(body))
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json"),
     ).build()
     val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
     (resp.statusCode(), resp.body())
 
   def put(daprPort: Int, path: String, body: String = ""): (Int, String) =
     val req = withTimeout(
-      HttpRequest.newBuilder(URI.create(s"http://localhost:$daprPort$path"))
+      HttpRequest
+        .newBuilder(URI.create(s"http://localhost:$daprPort$path"))
         .PUT(HttpRequest.BodyPublishers.ofString(body))
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json"),
     ).build()
     val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
     (resp.statusCode(), resp.body())

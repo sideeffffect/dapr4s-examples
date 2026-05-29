@@ -10,17 +10,17 @@ import dapr4s.*
 // ─────────────────────────────────────────────────────────────────────────────
 
 case class LockDemoResult(
-  finalCounter:  Int,
-  expected:      Int,
-  secondAcquire: Boolean,  // attempted while A holds lock — expected false
-  afterRelease:  Boolean,  // attempted after A releases  — expected true
+    finalCounter: Int,
+    expected: Int,
+    secondAcquire: Boolean, // attempted while A holds lock — expected false
+    afterRelease: Boolean, // attempted after A releases  — expected true
 )
 
 def distributedLockApp()(using DaprCapability): LockDemoResult =
   DaprCapability.state(StoreName("statestore")):
     DaprCapability.lock(StoreName("lockstore")):
       val resource = LockResourceId("my-resource")
-      val counter  = StateKey("lock-counter")
+      val counter = StateKey("lock-counter")
 
       StateCapability.save(counter, 0)
 
@@ -31,13 +31,12 @@ def distributedLockApp()(using DaprCapability): LockDemoResult =
           try
             val v = StateCapability.get[Int](counter).getOrElse(0)
             StateCapability.save(counter, v + 1)
-          finally
-            DistributedLockCapability.unlock(resource, owner)
+          finally DistributedLockCapability.unlock(resource, owner)
 
       val finalCounter = StateCapability.get[Int](counter).getOrElse(-1)
 
-      val ownerA        = LockOwner("process-A")
-      val ownerB        = LockOwner("process-B")
+      val ownerA = LockOwner("process-A")
+      val ownerB = LockOwner("process-B")
       val secondAcquire =
         if DistributedLockCapability.tryLock(resource, ownerA, expirySeconds = 10) then
           val second = DistributedLockCapability.tryLock(resource, ownerB, expirySeconds = 1)

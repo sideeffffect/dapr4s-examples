@@ -6,21 +6,21 @@ import dapr4s.*
 
 @scala.caps.assumeSafe
 object Codecs:
-  given upickle.default.ReadWriter[GreetRequest]  = upickle.default.macroRW
+  given upickle.default.ReadWriter[GreetRequest] = upickle.default.macroRW
   given upickle.default.ReadWriter[GreetResponse] = upickle.default.macroRW
   given upickle.default.ReadWriter[StatsResponse] = upickle.default.macroRW
-  given upickle.default.ReadWriter[ServiceStats]  = upickle.default.macroRW
+  given upickle.default.ReadWriter[ServiceStats] = upickle.default.macroRW
 
 import Codecs.given
 
 private def daprConfigFromEnv(defaultAppPort: Int): DaprRuntimeConfig =
-  val appPort = sys.env.getOrElse("APP_PORT",      defaultAppPort.toString).toInt
-  val http    = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
-  val grpc    = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
+  val appPort = sys.env.getOrElse("APP_PORT", defaultAppPort.toString).toInt
+  val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
+  val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
   DaprRuntimeConfig(
-    sidecar   = SidecarConfig(
-      httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
-      grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
+    sidecar = SidecarConfig(
+      httpEndpoint = java.net.URI.create(s"http://localhost:$http"),
+      grpcEndpoint = java.net.URI.create(s"http://localhost:$grpc"),
       grpcTlsInsecure = false,
     ),
     appServer = AppServerConfig(port = DaprPort(appPort)),

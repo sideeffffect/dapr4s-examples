@@ -7,7 +7,7 @@ import mill.javalib.*
 import coursier.maven.MavenRepository
 
 private val NightliesRepo = MavenRepository(
-  "https://repo.scala-lang.org/artifactory/maven-nightlies"
+  "https://repo.scala-lang.org/artifactory/maven-nightlies",
 )
 
 object nightliesJvmWorker extends JvmWorkerModule:
@@ -15,7 +15,7 @@ object nightliesJvmWorker extends JvmWorkerModule:
     super.repositoriesTask() ++ Seq(NightliesRepo)
   }
 
-val ScalaVersion  = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
+val ScalaVersion = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
 val Dapr4sVersion = "0.1.0-SNAPSHOT"
 
 trait BaseModule extends ScalaModule:
@@ -37,13 +37,13 @@ trait PureModule extends Dapr4sModule:
   )
 
 // ── Pure modules ──────────────────────────────────────────────────────────────
-object `01-hello-state`        extends PureModule
-object `02-secrets-config`     extends PureModule
-object `03-hello-pubsub`       extends PureModule
+object `01-hello-state` extends PureModule
+object `02-secrets-config` extends PureModule
+object `03-hello-pubsub` extends PureModule
 object `04-service-invocation` extends PureModule
-object `05-distributed-lock`   extends PureModule
-object `06-actors`             extends PureModule
-object `07-workflows`          extends PureModule
+object `05-distributed-lock` extends PureModule
+object `06-actors` extends PureModule
+object `07-workflows` extends PureModule
 
 // Services files from multiple JARs must be merged (not last-wins) so that
 // gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)

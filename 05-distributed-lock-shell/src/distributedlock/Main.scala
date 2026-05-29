@@ -7,19 +7,27 @@ import dapr4s.*
 private def daprConfigFromEnv(): DaprRuntimeConfig =
   val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
   val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt
-  DaprRuntimeConfig(sidecar = SidecarConfig(
-    httpEndpoint    = java.net.URI.create(s"http://localhost:$http"),
-    grpcEndpoint    = java.net.URI.create(s"http://localhost:$grpc"),
-    grpcTlsInsecure = false,
-  ))
+  DaprRuntimeConfig(sidecar =
+    SidecarConfig(
+      httpEndpoint = java.net.URI.create(s"http://localhost:$http"),
+      grpcEndpoint = java.net.URI.create(s"http://localhost:$grpc"),
+      grpcTlsInsecure = false,
+    ),
+  )
 
 @main def run(): Unit =
   println("=== 05 distributed-lock ===\n")
   DaprRuntime.run(daprConfigFromEnv()):
     val r = distributedLockApp()
-    println(s"Counter after ${r.expected} sequential workers: ${r.finalCounter}  ${if r.finalCounter == r.expected then "✓" else "✗"}")
+    println(s"Counter after ${r.expected} sequential workers: ${r.finalCounter}  ${
+        if r.finalCounter == r.expected then "✓" else "✗"
+      }")
     println()
     println("--- Double-acquire attempt ---")
-    println(s"process-B tryLock while A holds it: ${r.secondAcquire}  (expected false)  ${if !r.secondAcquire then "✓" else "✗"}")
-    println(s"process-B tryLock after A releases: ${r.afterRelease}  (expected true)   ${if r.afterRelease then "✓" else "✗"}")
+    println(s"process-B tryLock while A holds it: ${r.secondAcquire}  (expected false)  ${
+        if !r.secondAcquire then "✓" else "✗"
+      }")
+    println(
+      s"process-B tryLock after A releases: ${r.afterRelease}  (expected true)   ${if r.afterRelease then "✓" else "✗"}",
+    )
   println("\n[distributed-lock] done.")

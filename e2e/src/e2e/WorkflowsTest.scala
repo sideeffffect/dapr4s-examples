@@ -4,7 +4,7 @@ class WorkflowsTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
   val infra = ServerInfra(
-    appId     = "e2e-workflows",
+    appId = "e2e-workflows",
     jarModule = "workflows",
     mainClass = "workflows.workflowServer",
     postStart = _ => Thread.sleep(2_000),
@@ -23,10 +23,9 @@ class WorkflowsTest extends E2ESuite:
     val deadline = System.currentTimeMillis() + timeoutMs
     while System.currentTimeMillis() < deadline do
       val (_, body) = DaprHttp.get(infra.daprHttpPort, s"/v1.0-beta1/workflows/dapr/$instanceId")
-      val json      = ujson.read(body)
-      val status    = json.obj.get("runtimeStatus").map(_.str).getOrElse("")
-      if status == "COMPLETED" || status == "FAILED" || status == "TERMINATED" then
-        return json
+      val json = ujson.read(body)
+      val status = json.obj.get("runtimeStatus").map(_.str).getOrElse("")
+      if status == "COMPLETED" || status == "FAILED" || status == "TERMINATED" then return json
       Thread.sleep(500)
     throw RuntimeException(s"Workflow $instanceId did not complete within ${timeoutMs}ms")
 
@@ -49,7 +48,7 @@ class WorkflowsTest extends E2ESuite:
     val result = pollUntilComplete("e2e-wf-002")
     assertEquals(result("runtimeStatus").str, "COMPLETED")
     val output = workflowOutput(result)
-    assertEquals(output("success").bool,   false)
+    assertEquals(output("success").bool, false)
     assertEquals(output("message").str, "out of stock")
   }
 
@@ -59,6 +58,6 @@ class WorkflowsTest extends E2ESuite:
     val result = pollUntilComplete("e2e-wf-003")
     assertEquals(result("runtimeStatus").str, "COMPLETED")
     val output = workflowOutput(result)
-    assertEquals(output("success").bool,   false)
+    assertEquals(output("success").bool, false)
     assertEquals(output("message").str, "payment declined")
   }

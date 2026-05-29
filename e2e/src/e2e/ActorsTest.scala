@@ -5,7 +5,7 @@ class ActorsTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
   val infra = ServerInfra(
-    appId     = "e2e-actors",
+    appId = "e2e-actors",
     jarModule = "actors",
     mainClass = "actors.actorApp",
     // placement service needs a moment to register the actor type after daprd connects
@@ -25,7 +25,7 @@ class ActorsTest extends E2ESuite:
     val (status, body) = actorMethod(id, "get")
     assertEquals(status, 200)
     val json = ujson.read(body)
-    assertEquals(json("count").num.toInt,           0)
+    assertEquals(json("count").num.toInt, 0)
     assertEquals(json("totalIncrements").num.toInt, 0)
   }
 
@@ -35,7 +35,7 @@ class ActorsTest extends E2ESuite:
     val (status, body) = actorMethod(id, "get")
     assertEquals(status, 200)
     val json = ujson.read(body)
-    assertEquals(json("count").num.toInt,           5)
+    assertEquals(json("count").num.toInt, 5)
     assertEquals(json("totalIncrements").num.toInt, 1)
   }
 
@@ -45,7 +45,7 @@ class ActorsTest extends E2ESuite:
     actorMethod(id, "increment", """{"amount":7}""")
     val (_, body) = actorMethod(id, "get")
     val json = ujson.read(body)
-    assertEquals(json("count").num.toInt,           10)
+    assertEquals(json("count").num.toInt, 10)
     assertEquals(json("totalIncrements").num.toInt, 2)
   }
 

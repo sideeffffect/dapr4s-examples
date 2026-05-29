@@ -37,8 +37,7 @@ class ChargePayment(using JsonCodec[OrderRequest], JsonCodec[PaymentResult])
     val ok = req.budget >= 10.0
     PaymentResult(ok, if ok then s"TXN-${req.orderId}" else "")
 
-class RefundPayment(using JsonCodec[PaymentResult], JsonCodec[Unit])
-    extends WorkflowActivity[PaymentResult, Unit]:
+class RefundPayment(using JsonCodec[PaymentResult], JsonCodec[Unit]) extends WorkflowActivity[PaymentResult, Unit]:
   def execute(payment: PaymentResult): Unit = ()
 
 class DispatchShipment(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult])
@@ -49,19 +48,20 @@ class DispatchShipment(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult])
 // ── Workflow (saga) ───────────────────────────────────────────────────────────
 
 class OrderProcessingWorkflow(using
-  JsonCodec[OrderRequest],
-  JsonCodec[ReservationResult],
-  JsonCodec[PaymentResult],
-  JsonCodec[ShipmentResult],
-  JsonCodec[OrderResult],
+    JsonCodec[OrderRequest],
+    JsonCodec[ReservationResult],
+    JsonCodec[PaymentResult],
+    JsonCodec[ShipmentResult],
+    JsonCodec[OrderResult],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
-    val order = WorkflowContext.getInput[OrderRequest].getOrElse:
-      throw RuntimeException("no input")
+    val order = WorkflowContext
+      .getInput[OrderRequest]
+      .getOrElse:
+        throw RuntimeException("no input")
 
     val reservation = WorkflowContext.callActivity[ReserveInventory](order).await()
-    if !reservation.reserved then
-      WorkflowContext.complete(OrderResult(false, "out of stock"))
+    if !reservation.reserved then WorkflowContext.complete(OrderResult(false, "out of stock"))
     else
       val payment = WorkflowContext.callActivity[ChargePayment](order).await()
       if !payment.charged then
@@ -73,20 +73,19 @@ class OrderProcessingWorkflow(using
           WorkflowContext.callActivity[RefundPayment](payment).await()
           WorkflowContext.callActivity[CancelReservation](reservation).await()
           WorkflowContext.complete(OrderResult(false, "dispatch failed"))
-        else
-          WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
+        else WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
 // ── Server app ────────────────────────────────────────────────────────────────
 
 def serverApp()(using
-  JsonCodec[OrderRequest],
-  JsonCodec[ReservationResult],
-  JsonCodec[PaymentResult],
-  JsonCodec[ShipmentResult],
-  JsonCodec[OrderResult],
+    JsonCodec[OrderRequest],
+    JsonCodec[ReservationResult],
+    JsonCodec[PaymentResult],
+    JsonCodec[ShipmentResult],
+    JsonCodec[OrderResult],
 ): DaprApp =
   DaprApp(
-    workflows  = List(new OrderProcessingWorkflow),
+    workflows = List(new OrderProcessingWorkflow),
     activities = List(
       new ReserveInventory,
       new CancelReservation,
@@ -99,12 +98,12 @@ def serverApp()(using
 // ── Driver app ────────────────────────────────────────────────────────────────
 
 def processOrder(
-  order:   OrderRequest,
-  name:    WorkflowName,
-  timeout: FiniteDuration,
+    order: OrderRequest,
+    name: WorkflowName,
+    timeout: FiniteDuration,
 )(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): ProcessOrderResult =
   DaprCapability.workflow:
-    val id       = WorkflowCapability.start(name, order)
+    val id = WorkflowCapability.start(name, order)
     val snapshot = WorkflowCapability.waitForCompletion(id, timeout)
     snapshot match
       case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
@@ -113,11 +112,11 @@ def processOrder(
         ProcessOrderResult(order.orderId, timedOut = false, result = result)
 
 def driverApp(
-  name:    WorkflowName,
-  timeout: FiniteDuration,
+    name: WorkflowName,
+    timeout: FiniteDuration,
 )(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): List[ProcessOrderResult] =
   List(
-    processOrder(OrderRequest("ORD-001", item = "widget", quantity = 3,  budget = 25.0), name, timeout),
+    processOrder(OrderRequest("ORD-001", item = "widget", quantity = 3, budget = 25.0), name, timeout),
     processOrder(OrderRequest("ORD-002", item = "gadget", quantity = 10, budget = 50.0), name, timeout),
-    processOrder(OrderRequest("ORD-003", item = "gizmo",  quantity = 1,  budget = 5.0),  name, timeout),
+    processOrder(OrderRequest("ORD-003", item = "gizmo", quantity = 1, budget = 5.0), name, timeout),
   )

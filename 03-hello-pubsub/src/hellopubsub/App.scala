@@ -3,7 +3,7 @@ package hellopubsub
 import dapr4s.*
 
 val PubSubComponent = PubSubName("pubsub")
-val MessageTopic    = Topic("hello-topic")
+val MessageTopic = Topic("hello-topic")
 
 case class Message(from: String, text: String, sequenceNo: Int)
 
@@ -21,9 +21,11 @@ def onMessage(event: CloudEvent[Message])(using PubSubCapability, JsonCodec[Mess
 
 def subscriberApp()(using DaprCapability, JsonCodec[Message]): DaprApp =
   DaprCapability.pubsub(PubSubComponent):
-    DaprApp(subscriptions = List(
-      Subscription[Message](PubSubComponent, MessageTopic)(onMessage),
-    ))
+    DaprApp(subscriptions =
+      List(
+        Subscription[Message](PubSubComponent, MessageTopic)(onMessage),
+      ),
+    )
 
 def publisherApp()(using DaprCapability, JsonCodec[Message]): Unit =
   DaprCapability.pubsub(PubSubComponent):

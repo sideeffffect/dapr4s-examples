@@ -10,7 +10,7 @@ import dapr4s.*
 
 def readSecrets()(using DaprCapability): (Option[SecretValue], Seq[String]) =
   DaprCapability.secrets(SecretStoreName("secretstore")):
-    val apiKey  = SecretsCapability.get(SecretKey("MY_API_KEY"))
+    val apiKey = SecretsCapability.get(SecretKey("MY_API_KEY"))
     val allKeys = SecretsCapability.getBulk().keys.map(_.value).toSeq.sorted
     (apiKey, allKeys)
 

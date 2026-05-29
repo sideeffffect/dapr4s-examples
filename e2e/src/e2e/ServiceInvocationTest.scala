@@ -3,7 +3,7 @@ package e2e
 class ServiceInvocationTest extends E2ESuite:
 
   val infra = ServerInfra(
-    appId     = "e2e-callee",
+    appId = "e2e-callee",
     jarModule = "service-invocation",
     mainClass = "serviceinvocation.callee",
   )
@@ -14,7 +14,7 @@ class ServiceInvocationTest extends E2ESuite:
     assertEquals(status, 200)
     val json = ujson.read(body)
     assertEquals(json("greeting").str, "Hello, Alice!")
-    assertEquals(json("from").str,     "greeting-service")
+    assertEquals(json("from").str, "greeting-service")
   }
 
   test("greet es") {
@@ -40,10 +40,10 @@ class ServiceInvocationTest extends E2ESuite:
     DaprHttp.appPost(infra.appHttpPort, "/greet", """{"name":"B","language":"en"}""")
     val (status, body) = DaprHttp.appGet(infra.appHttpPort, "/stats")
     assertEquals(status, 200)
-    val json  = ujson.read(body)
+    val json = ujson.read(body)
     val count = json("totalRequests").num.toLong
     val langs = json("languages").arr.map(_.str).toSet
-    assert(count >= 2,            s"expected ≥2 requests, got $count")
-    assert(langs.contains("de"),  clue(langs))
-    assert(langs.contains("en"),  clue(langs))
+    assert(count >= 2, s"expected ≥2 requests, got $count")
+    assert(langs.contains("de"), clue(langs))
+    assert(langs.contains("en"), clue(langs))
   }

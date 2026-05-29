@@ -3,7 +3,7 @@ package e2e
 class HelloPubSubTest extends E2ESuite:
 
   val infra = ServerInfra(
-    appId     = "e2e-pubsub-sub",
+    appId = "e2e-pubsub-sub",
     jarModule = "hello-pubsub",
     mainClass = "hellopubsub.subscriber",
   )
@@ -13,7 +13,7 @@ class HelloPubSubTest extends E2ESuite:
     val (status, body) = DaprHttp.appGet(infra.appHttpPort, "/dapr/subscribe")
     assertEquals(status, 200)
     assert(body.contains("hello-topic"), clue(body))
-    assert(body.contains("pubsub"),      clue(body))
+    assert(body.contains("pubsub"), clue(body))
   }
 
   test("publishing a message returns 204") {

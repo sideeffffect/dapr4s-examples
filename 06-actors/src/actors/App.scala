@@ -6,11 +6,11 @@ import scala.concurrent.duration.FiniteDuration
 case class IncrBy(amount: Int)
 case class CounterState(count: Int, totalIncrements: Int)
 
-val ActorTypeName  = ActorType("CounterActor")
+val ActorTypeName = ActorType("CounterActor")
 val StateKey_Count = StateKey("count")
 val StateKey_Total = StateKey("total")
-val AutoTimer      = TimerName("auto-tick")
-val ResetReminder  = ReminderName("scheduled-reset")
+val AutoTimer = TimerName("auto-tick")
+val ResetReminder = ReminderName("scheduled-reset")
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // ActorContext is a per-invocation ExclusiveCapability: the compiler rejects
@@ -25,7 +25,7 @@ val ResetReminder  = ReminderName("scheduled-reset")
 
 def readState(using ActorContext): CounterState =
   CounterState(
-    count           = ActorContext.get[Int](StateKey_Count).getOrElse(0),
+    count = ActorContext.get[Int](StateKey_Count).getOrElse(0),
     totalIncrements = ActorContext.get[Int](StateKey_Total).getOrElse(0),
   )
 
@@ -50,9 +50,9 @@ def onReset(msg: String)(using ActorContext): Unit =
 // ── Actor definition ──────────────────────────────────────────────────────────
 
 def counterActorDefinition(
-  tickInterval:  FiniteDuration,
-  tickDelay:     Option[FiniteDuration],
-  reminderDelay: FiniteDuration,
+    tickInterval: FiniteDuration,
+    tickDelay: Option[FiniteDuration],
+    reminderDelay: FiniteDuration,
 )(using JsonCodec[IncrBy], JsonCodec[CounterState]): ActorDefinition =
   ActorDefinition(ActorTypeName): (id, ctx) =>
     given ActorContext = ctx
@@ -67,17 +67,16 @@ def counterActorDefinition(
         ,
         ActorMethodRoute[Unit, CounterState](MethodName("scheduleReset")): _ =>
           ActorContext.registerReminder(ResetReminder, "time to reset", reminderDelay, None)
-          readState
-        ,
+          readState,
       ),
-      timers    = List(ActorTimerRoute[IncrBy](AutoTimer)(onAutoTick)),
+      timers = List(ActorTimerRoute[IncrBy](AutoTimer)(onAutoTick)),
       reminders = List(ActorReminderRoute[String](ResetReminder)(onReset)),
     )
 
 def counterActorApp(
-  tickInterval:  FiniteDuration,
-  tickDelay:     Option[FiniteDuration],
-  reminderDelay: FiniteDuration,
+    tickInterval: FiniteDuration,
+    tickDelay: Option[FiniteDuration],
+    reminderDelay: FiniteDuration,
 )(using JsonCodec[IncrBy], JsonCodec[CounterState]): DaprApp =
   DaprApp(actors = List(counterActorDefinition(tickInterval, tickDelay, reminderDelay)))
 
@@ -89,7 +88,11 @@ def driverGetState(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): 
   DaprCapability.actor(ActorTypeName, id):
     ActorCapability.invoke[CounterState](MethodName("get"))
 
-def driverIncrement(id: ActorId, by: IncrBy)(using DaprCapability, JsonCodec[IncrBy], JsonCodec[CounterState]): CounterState =
+def driverIncrement(id: ActorId, by: IncrBy)(using
+    DaprCapability,
+    JsonCodec[IncrBy],
+    JsonCodec[CounterState],
+): CounterState =
   DaprCapability.actor(ActorTypeName, id):
     ActorCapability.invoke[IncrBy](MethodName("increment"), by)[CounterState]
 
