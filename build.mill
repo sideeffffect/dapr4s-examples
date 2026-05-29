@@ -80,6 +80,7 @@ object e2e extends BaseModule with TestModule.Munit:
     mvn"com.lihaoyi::os-lib:0.11.4",
     mvn"com.lihaoyi::upickle:4.1.0",
     mvn"org.testcontainers:testcontainers:1.21.4",
+    mvn"org.slf4j:slf4j-simple:2.0.17",
   )
   // millSourcePath = {workspace}/e2e; one level up is the workspace root.
   private def workspaceRoot: os.Path = moduleDir / os.up
