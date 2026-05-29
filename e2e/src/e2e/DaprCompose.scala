@@ -3,17 +3,16 @@ package e2e
 import munit.Fixture
 import org.testcontainers.containers.ComposeContainer
 import org.testcontainers.containers.wait.strategy.Wait
-import java.io.File
 import java.time.Duration
 
-private def composeFile(name: String): File =
-  File(s"${System.getProperty("e2e.projectRoot")}/e2e/docker/$name")
+private def composeFile(name: String) =
+  (Harness.ProjectRoot / "e2e" / "docker" / name).toIO
 
 // Copies root components/ into a temp dir, substituting localhost → redis
 // so daprd in Docker reaches the Redis container by its service name.
 // Returns the temp dir path for use as COMPONENTS_PATH in the compose env.
 private def prepareComponents(): os.Path =
-  val src  = os.Path(System.getProperty("e2e.projectRoot")) / "components"
+  val src  = Harness.ProjectRoot / "components"
   val dest = os.temp.dir(prefix = "dapr-e2e-components")
   // Docker's daprd runs as a different uid; world-read+execute is required.
   os.perms.set(dest, "rwxr-xr-x")
