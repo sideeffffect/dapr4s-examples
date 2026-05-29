@@ -24,7 +24,7 @@ private def daprConfigFromEnv(): DaprRuntimeConfig =
 
 @main def run(): Unit =
   println("=== 01 hello-state: state CRUD with capability scoping ===\n")
-  DaprRuntime.run(daprConfigFromEnv()):
+  Dapr(daprConfigFromEnv()).run:
     val r = helloStateApp()
     println(s"saved:        ${r.saved}")
     println(s"etag save:    ${if r.etagConflict.isEmpty then "ok" else s"conflict: ${r.etagConflict.get.getMessage}"}")

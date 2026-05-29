@@ -17,7 +17,7 @@ private def daprConfigFromEnv(): DaprRuntimeConfig =
 
 @main def run(): Unit =
   println("=== 05 distributed-lock ===\n")
-  DaprRuntime.run(daprConfigFromEnv()):
+  Dapr(daprConfigFromEnv()).run:
     val r = distributedLockApp()
     println(s"Counter after ${r.expected} sequential workers: ${r.finalCounter}  ${
         if r.finalCounter == r.expected then "✓" else "✗"

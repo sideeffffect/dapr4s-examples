@@ -20,7 +20,7 @@ private def daprConfigFromEnv(): DaprRuntimeConfig =
 
 @main def run(): Unit =
   println("=== 02 secrets-config: secrets and live configuration ===\n")
-  DaprRuntime.run(daprConfigFromEnv()):
+  Dapr(daprConfigFromEnv()).run:
 
     val (apiKey, allKeys) = readSecrets()
     println(s"MY_API_KEY   = ${apiKey.map(_.value).getOrElse("<not set>")}")

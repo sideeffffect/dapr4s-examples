@@ -23,12 +23,12 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprRuntimeConfig =
 @main def subscriber(): Unit =
   val config = daprConfigFromEnv(defaultAppPort = 8083)
   println(s"=== 03 hello-pubsub: subscriber on port ${config.appServer.port} ===\n")
-  DaprRuntime.serve(config):
+  Dapr(config).serve:
     subscriberApp()
 
 @main def publisher(): Unit =
   println("=== 03 hello-pubsub: publisher ===\n")
-  DaprRuntime.run(daprConfigFromEnv(defaultAppPort = 8083)):
+  Dapr(daprConfigFromEnv(defaultAppPort = 8083)).run:
     println("Publishing 5 messages to hello-topic...")
     publisherApp()
   println("[publisher] done.")
