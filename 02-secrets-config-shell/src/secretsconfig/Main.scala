@@ -26,8 +26,7 @@ private def daprConfigFromEnv(): DaprConfig =
     println(s"MY_API_KEY   = ${apiKey.map(_.value).getOrElse("<not set>")}")
     println(s"all secrets: ${allKeys.mkString(", ")}\n")
 
-    val keys = Seq(ConfigKey("greeting"), ConfigKey("max-retries"))
-    val items = readConfig(keys)
+    val items = readConfig()
     items.foreach: (k, item) =>
       println(s"config ${k.value} = ${item.value}  (version: ${item.version.value})")
 
