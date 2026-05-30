@@ -4,6 +4,16 @@ import dapr4s.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
+private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
+  def encode(value: T): String = upickle.default.write(value)
+  def decode(json: String | Null): Either[JsonDecodeException, T] =
+    if json == null then Left(JsonDecodeException("null input"))
+    else
+      try Right(upickle.default.read[T](json))
+      catch case e: Exception => Left(JsonDecodeException(e.getMessage, e))
+
+private given JsonCodec[Int] = upickleCodec
+
 private def daprConfigFromEnv(): DaprConfig =
   val http = sys.env.getOrElse("DAPR_HTTP_PORT", "3500").toInt
   val grpc = sys.env.getOrElse("DAPR_GRPC_PORT", "50001").toInt

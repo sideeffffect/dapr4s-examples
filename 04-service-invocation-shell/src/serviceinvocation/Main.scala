@@ -4,12 +4,23 @@ import dapr4s.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
+private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
+  def encode(value: T): String = upickle.default.write(value)
+  def decode(json: String | Null): Either[JsonDecodeException, T] =
+    if json == null then Left(JsonDecodeException("null input"))
+    else
+      try Right(upickle.default.read[T](json))
+      catch case e: Exception => Left(JsonDecodeException(e.getMessage, e))
+
 @scala.caps.assumeSafe
 object Codecs:
-  given upickle.default.ReadWriter[GreetRequest] = upickle.default.macroRW
-  given upickle.default.ReadWriter[GreetResponse] = upickle.default.macroRW
-  given upickle.default.ReadWriter[StatsResponse] = upickle.default.macroRW
-  given upickle.default.ReadWriter[ServiceStats] = upickle.default.macroRW
+  given JsonCodec[GreetRequest] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[GreetResponse] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[StatsResponse] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[ServiceStats] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[Unit] with
+    def encode(value: Unit): String = "null"
+    def decode(json: String | Null): Either[JsonDecodeException, Unit] = Right(())
 
 import Codecs.given
 

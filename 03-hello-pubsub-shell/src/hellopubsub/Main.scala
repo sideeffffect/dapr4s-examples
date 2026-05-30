@@ -4,8 +4,16 @@ import dapr4s.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
+private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
+  def encode(value: T): String = upickle.default.write(value)
+  def decode(json: String | Null): Either[JsonDecodeException, T] =
+    if json == null then Left(JsonDecodeException("null input"))
+    else
+      try Right(upickle.default.read[T](json))
+      catch case e: Exception => Left(JsonDecodeException(e.getMessage, e))
+
 @scala.caps.assumeSafe
-given upickle.default.ReadWriter[Message] = upickle.default.macroRW
+given JsonCodec[Message] = upickleCodec(using upickle.default.macroRW)
 
 private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val appPort = sys.env.getOrElse("APP_PORT", defaultAppPort.toString).toInt

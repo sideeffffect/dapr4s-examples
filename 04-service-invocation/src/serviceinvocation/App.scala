@@ -47,6 +47,7 @@ def calleeApp()(using
     JsonCodec[GreetRequest],
     JsonCodec[GreetResponse],
     JsonCodec[StatsResponse],
+    JsonCodec[Unit],
 ): DaprApp =
   DaprCapability.state(StatStore):
     DaprApp(invocations =

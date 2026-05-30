@@ -53,6 +53,7 @@ class OrderProcessingWorkflow(using
     JsonCodec[PaymentResult],
     JsonCodec[ShipmentResult],
     JsonCodec[OrderResult],
+    JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
     val order = WorkflowContext
@@ -83,6 +84,7 @@ def serverApp()(using
     JsonCodec[PaymentResult],
     JsonCodec[ShipmentResult],
     JsonCodec[OrderResult],
+    JsonCodec[Unit],
 ): DaprApp =
   DaprApp(
     workflows = List(new OrderProcessingWorkflow),

@@ -16,7 +16,7 @@ case class LockDemoResult(
     afterRelease: Boolean, // attempted after A releases  — expected true
 )
 
-def distributedLockApp()(using DaprCapability): LockDemoResult =
+def distributedLockApp()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
   DaprCapability.state(StoreName("statestore")):
     DaprCapability.lock(StoreName("lockstore")):
       val resource = LockResourceId("my-resource")

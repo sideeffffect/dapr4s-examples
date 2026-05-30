@@ -5,10 +5,23 @@ import scala.concurrent.duration.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
+private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
+  def encode(value: T): String = upickle.default.write(value)
+  def decode(json: String | Null): Either[JsonDecodeException, T] =
+    if json == null then Left(JsonDecodeException("null input"))
+    else
+      try Right(upickle.default.read[T](json))
+      catch case e: Exception => Left(JsonDecodeException(e.getMessage, e))
+
 @scala.caps.assumeSafe
 object Codecs:
-  given upickle.default.ReadWriter[IncrBy] = upickle.default.macroRW
-  given upickle.default.ReadWriter[CounterState] = upickle.default.macroRW
+  given JsonCodec[IncrBy] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[CounterState] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[Int] = upickleCodec
+  given JsonCodec[String] = upickleCodec
+  given JsonCodec[Unit] with
+    def encode(value: Unit): String = "null"
+    def decode(json: String | Null): Either[JsonDecodeException, Unit] = Right(())
 
 import Codecs.given
 

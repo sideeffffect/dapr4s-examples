@@ -16,34 +16,34 @@ val ResetReminder = ReminderName("scheduled-reset")
 // ActorContext is a per-invocation ExclusiveCapability: the compiler rejects
 // any attempt to capture it in a value that outlives the handler scope.
 // Actor state flows only through ActorContext.get / .set.
-// Duration constants are passed from the shell.  JsonCodec[IncrBy] and
-// JsonCodec[CounterState] are passed from the shell; JsonCodec[Int] for raw
-// state values is resolved from upickle's built-in ReadWriter instances.
+// Duration constants are passed from the shell.  All JsonCodec instances are
+// passed from the shell so codec derivation and primitive codecs stay out of
+// this module.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Actor handler methods ─────────────────────────────────────────────────────
 
-def readState(using ActorContext): CounterState =
+def readState(using ActorContext, JsonCodec[Int]): CounterState =
   CounterState(
     count = ActorContext.get[Int](StateKey_Count).getOrElse(0),
     totalIncrements = ActorContext.get[Int](StateKey_Total).getOrElse(0),
   )
 
-def increment(req: IncrBy)(using ActorContext): CounterState =
+def increment(req: IncrBy)(using ActorContext, JsonCodec[Int]): CounterState =
   val s = readState
   ActorContext.set(StateKey_Count, s.count + req.amount)
   ActorContext.set(StateKey_Total, s.totalIncrements + 1)
   readState
 
-def reset()(using ActorContext): CounterState =
+def reset()(using ActorContext, JsonCodec[Int]): CounterState =
   ActorContext.set(StateKey_Count, 0)
   readState
 
-def onAutoTick(req: IncrBy)(using ActorContext): Unit =
+def onAutoTick(req: IncrBy)(using ActorContext, JsonCodec[Int]): Unit =
   increment(req)
   ()
 
-def onReset(msg: String)(using ActorContext): Unit =
+def onReset(msg: String)(using ActorContext, JsonCodec[Int]): Unit =
   reset()
   ()
 
@@ -53,7 +53,13 @@ def counterActorDefinition(
     tickInterval: FiniteDuration,
     tickDelay: Option[FiniteDuration],
     reminderDelay: FiniteDuration,
-)(using JsonCodec[IncrBy], JsonCodec[CounterState]): ActorDefinition =
+)(using
+    JsonCodec[IncrBy],
+    JsonCodec[CounterState],
+    JsonCodec[Int],
+    JsonCodec[Unit],
+    JsonCodec[String],
+): ActorDefinition =
   ActorDefinition(ActorTypeName): (id, ctx) =>
     given ActorContext = ctx
     ActorRoutes(
@@ -77,7 +83,7 @@ def counterActorApp(
     tickInterval: FiniteDuration,
     tickDelay: Option[FiniteDuration],
     reminderDelay: FiniteDuration,
-)(using JsonCodec[IncrBy], JsonCodec[CounterState]): DaprApp =
+)(using JsonCodec[IncrBy], JsonCodec[CounterState], JsonCodec[Int], JsonCodec[Unit], JsonCodec[String]): DaprApp =
   DaprApp(actors = List(counterActorDefinition(tickInterval, tickDelay, reminderDelay)))
 
 // ── Driver helper methods ─────────────────────────────────────────────────────
