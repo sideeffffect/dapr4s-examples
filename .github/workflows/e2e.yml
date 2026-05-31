@@ -47,3 +47,40 @@ jobs:
           name: test-results
           path: out/e2e/testForked.dest/
           if-no-files-found: ignore
+
+  slides:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Use the runner's pre-installed Chrome instead of letting Puppeteer
+      # download its own; the build.mill slides task auto-detects this path.
+      - name: Install Mermaid CLI
+        run: npm install -g @mermaid-js/mermaid-cli
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+      - name: Build slides PDF
+        run: ./mill show slides
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+
+      - name: Upload slides PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: slides
+          path: out/slides.dest/SLIDES.pdf
+          if-no-files-found: error

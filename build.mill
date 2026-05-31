@@ -71,6 +71,90 @@ object `06-actors-shell` extends ShellModule:
 object `07-workflows-shell` extends ShellModule:
   override def moduleDeps = Seq(`07-workflows`)
 
+// ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
+// Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
+// fenced block in SLIDES.md to a PNG with the Mermaid CLI (mmdc), rewrites the deck
+// to reference those images, then runs Marp (via npx) to produce the PDF.
+//
+// Requirements on PATH (or via env): mmdc, npx, and a Chromium/Chrome binary.
+// Override the browser with CHROME_PATH if auto-detection fails.
+//
+//   ./mill show slides     # build the PDF; prints its path under out/
+// ─────────────────────────────────────────────────────────────────────────────
+def slidesSource = Task.Source("SLIDES.md")
+
+def slides: T[PathRef] = Task {
+  val src = slidesSource().path
+  val work = Task.dest / "work"
+  os.makeDir.all(work)
+
+  def resolve(cmd: String): os.Path =
+    val r = os.proc("which", cmd).call(check = false, stderr = os.Pipe)
+    if r.exitCode == 0 then os.Path(r.out.trim())
+    else Task.fail(s"`$cmd` not found on PATH")
+
+  val chrome: os.Path =
+    sys.env.get("CHROME_PATH").map(os.Path(_)).filter(os.exists).getOrElse {
+      Seq(
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/opt/google/chrome/chrome",
+      ).map(os.Path(_)).find(os.exists)
+        .getOrElse(Task.fail("No Chrome/Chromium found; set CHROME_PATH"))
+    }
+  val mmdc = resolve("mmdc")
+  val npx = resolve("npx")
+
+  os.write(
+    work / "puppeteer.json",
+    s"""{ "executablePath": "$chrome", "args": ["--no-sandbox"] }""",
+  )
+
+  // 1. Extract each ```mermaid block to its own .mmd and replace it in the deck
+  //    with a Marp image reference (paths relative to the generated deck).
+  val deck = List.newBuilder[String]
+  val block = List.newBuilder[String]
+  var n = 0
+  var inBlock = false
+  for line <- os.read.lines(src) do
+    if !inBlock && line.trim == "```mermaid" then
+      inBlock = true; n += 1; block.clear()
+    else if inBlock && line.trim == "```" then
+      inBlock = false
+      os.write(work / s"diagram-$n.mmd", block.result().mkString("\n"))
+      deck += s"![center](diagram-$n.png)"
+    else if inBlock then block += line
+    else deck += line
+  os.write(work / "deck.md", deck.result().mkString("\n"))
+
+  // 2. Render every diagram to a high-DPI transparent PNG.
+  for i <- 1 to n do
+    Task.log.info(s"rendering diagram-$i")
+    os.proc(
+      mmdc, "-p", work / "puppeteer.json",
+      "-i", work / s"diagram-$i.mmd",
+      "-o", work / s"diagram-$i.png",
+      "-s", "2", "-b", "transparent",
+    ).call(cwd = work, stdout = os.Inherit, stderr = os.Inherit)
+
+  // 3. Marp -> PDF (allow local files so the PNGs are embedded).
+  val pdf = Task.dest / "SLIDES.pdf"
+  Task.log.info(s"running marp -> $pdf")
+  os.proc(
+    npx, "--yes", "@marp-team/marp-cli@latest",
+    work / "deck.md", "--pdf", "--allow-local-files", "--no-stdin", "-o", pdf,
+  ).call(
+    cwd = work,
+    env = Map("CHROME_PATH" -> chrome.toString),
+    stdout = os.Inherit,
+    stderr = os.Inherit,
+  )
+
+  PathRef(pdf)
+}
+
 // ── E2E test module ───────────────────────────────────────────────────────────
 // Runs Dapr infrastructure via Docker Compose + Testcontainers (no dapr CLI
 // required on the host). Assembly JARs are built as task dependencies and
