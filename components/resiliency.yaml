@@ -1,0 +1,22 @@
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: scan-resiliency
+spec:
+  # Retry inbound pub/sub delivery when a subscriber returns
+  # SubscriptionResult.Retry. With the Redis pub/sub component the message is
+  # ack'd as soon as it is read, so a RETRY response is NOT redelivered via the
+  # stream's pending-entries reclaim (processingTimeout/redeliverInterval govern
+  # only crashed-consumer reclaim). Dapr resiliency re-invokes the handler inline
+  # instead — that is what drives the 08 flaky-scan retry path to eventual success.
+  policies:
+    retries:
+      pubsubRetry:
+        policy: constant
+        duration: 2s
+        maxRetries: 10
+  targets:
+    components:
+      pubsub:
+        inbound:
+          retry: pubsubRetry

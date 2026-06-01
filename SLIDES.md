@@ -51,6 +51,7 @@ style: |
 3. **Safe Scala** — capture checking, capabilities, safe mode
 4. **dapr4s** — design: pure core + impure shell
 5. **Seven worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows
+   - plus **two real-world case studies** — Grafana scan pipeline, ZEISS order saga
 6. **The payoff** — what the compiler now guarantees
 7. **Trade-offs, status, and where this goes next
 
@@ -828,6 +829,240 @@ workflows) run a server + a driver in two terminals.
 
 <!-- _class: section-break -->
 
+# Part 5½
+## Two real-world case studies
+
+*The seven examples are each one building block. Real systems compose several —
+across several services. Here are two, modelled on production Dapr users.*
+
+---
+
+## Why these two?
+
+Dapr's own adopter list includes both. They stress **different** halves of the model:
+
+| | **Grafana** scan pipeline | **ZEISS** order fulfillment |
+|---|---|---|
+| Shape | event-driven **fan-out** | request/response **saga** |
+| Core block | **pub/sub** + state | **workflow** + service invocation |
+| Hard part | at-least-once, dedup, **DLQ** | **compensation** across services |
+| Services | 3 (gateway · worker · results) | 4 (order · inventory · payment · shipping) |
+| Lives in | mostly **pure** handlers | saga in the **shell** (captures + stores caps) |
+
+Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
+
+---
+
+<!-- _class: section-break -->
+
+# Case study 1
+## Grafana — vulnerability scan pipeline
+
+---
+
+## The real system, in one diagram
+
+Grafana scans every container image they ship for CVEs. Images arrive on a queue,
+a worker fleet scans them, results feed a dashboard. The pipeline must be
+**idempotent** (the queue is at-least-once) and **resilient** (scans flake).
+
+```mermaid
+flowchart LR
+  SQS[/"image source<br/>(SQS / GitHub / ECR)"/] --> GW
+  GW["gateway<br/>submit + publish"] -- "scan-requested" --> PS(("pub/sub"))
+  PS --> W["worker fleet<br/>scan image"]
+  W -- "scan-completed" --> PS2(("pub/sub"))
+  PS2 --> RES["results<br/>dashboard"]
+  W <-->|"seen-/attempt- keys"| ST[("state store")]
+  W -. "max retries exceeded" .-> DLQ[/"dead-letter topic"/]
+  classDef svc fill:#e6eeff,stroke:#3355aa,color:#1a1a2e;
+  classDef infra fill:#fff3d6,stroke:#c98a00,color:#1a1a2e;
+  class GW,W,RES svc; class PS,PS2,ST,DLQ infra;
+```
+
+Three modules — `08-scan-gateway`, `08-scan-worker`, `08-scan-results` — plus a
+shell each. The fan-out (one topic, many workers) is **Dapr config, not code**.
+
+---
+
+## The five concerns → Dapr building blocks
+
+| Concern | Without Dapr | In this pipeline |
+|---|---|---|
+| **Ingestion** | SQS SDK in every service | input binding / `publish` to a topic |
+| **Fan-out** | broker client + consumer groups | `Subscription` on `scan-requested` |
+| **Idempotency** | dedup table you maintain | `seen-<scanId>` marker in state store |
+| **Retry** | hand-rolled backoff | return `SubscriptionResult.Retry` |
+| **Dead-letter** | poison-message queue plumbing | DLQ topic in subscription **YAML** |
+
+The worker's handler is **pure business logic** over capabilities — the broker,
+the retry policy, and the DLQ never appear in Scala.
+
+---
+
+## The gateway — publish on the edge (pure)
+
+```scala
+def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
+  PubSubCapability.publish(ScanRequestedTopic, req)
+  SubmitResponse(accepted = true, req.scanId)
+
+def gatewayApp()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
+  DaprCapability.pubsub(PubSubComponent):
+    DaprApp(invocations =
+      List(InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit)))
+```
+
+A caller `POST`s an image; the gateway publishes it and acks. The seed driver
+stands in for the SQS binding — it even publishes a **duplicate** `scan-3` and a
+`"flaky"` source so the worker's dedup and retry paths get exercised end-to-end.
+
+---
+
+## The worker — idempotency, retry, DLQ (pure)
+
+```scala
+def onScanRequested(event: CloudEvent[ScanRequest])(using
+    StateCapability, PubSubCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
+): SubscriptionResult =
+  val req = event.data
+  if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then
+    SubscriptionResult.Drop                                  // already done — discard
+  else
+    val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
+    StateCapability.save(attemptKey(req.scanId), attempts + 1)
+    if req.source == "flaky" && attempts == 0 then
+      SubscriptionResult.Retry                               // transient — redeliver
+    else
+      PubSubCapability.publish(ScanCompletedTopic, scan(req))
+      StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
+      SubscriptionResult.Success                             // ack
+```
+
+`Drop` / `Retry` / `Success` are the **only** three answers — the type makes the
+at-least-once contract explicit, and the sidecar handles redelivery and the DLQ.
+
+---
+
+<!-- _class: section-break -->
+
+# Case study 2
+## ZEISS — order fulfillment saga
+
+---
+
+## The real system: a saga across microservices
+
+ZEISS coordinates orders across independent services. Each step can fail, and a
+failed step must **undo** the ones before it. A durable Dapr Workflow drives the
+orchestration; each activity makes one **service-invocation** call downstream.
+
+```mermaid
+flowchart LR
+  subgraph order["order-service (shell)"]
+    WF["OrderProcessingWorkflow<br/>saga + compensation"]
+  end
+  WF -- "reserve / release" --> INV["inventory-service"]
+  WF -- "charge / refund" --> PAY["payment-service"]
+  WF -- "dispatch" --> SHIP["shipping-service"]
+  INV --- ST[("state: stock-&lt;sku&gt;")]
+  classDef svc fill:#e6eeff,stroke:#3355aa,color:#1a1a2e;
+  classDef orch fill:#ffe9c2,stroke:#c98a00,color:#1a1a2e;
+  classDef infra fill:#fff3d6,stroke:#c98a00,color:#1a1a2e;
+  class INV,PAY,SHIP svc; class WF orch; class ST infra;
+```
+
+Four modules — `09-order-service` (the saga) plus `09-inventory-service`,
+`09-payment-service`, `09-shipping-service`. They agree by **JSON on the wire**;
+each owns its own copy of the contract.
+
+---
+
+## The saga as a state machine
+
+```mermaid
+flowchart TD
+  Start([OrderRequest]) --> R{Reserve<br/>reserved?}
+  R -- no --> F1[/"out of stock"/]
+  R -- yes --> P{Charge<br/>charged?}
+  P -- no --> CR1[Release] --> F2[/"payment declined"/]
+  P -- yes --> D{Dispatch<br/>dispatched?}
+  D -- no --> RF[Refund] --> CR2[Release] --> F3[/"dispatch failed"/]
+  D -- yes --> OK[/"shipped ✓"/]
+  classDef ok fill:#d6f5d6,stroke:#2e7d32,color:#1a1a2e;
+  classDef bad fill:#ffe0b3,stroke:#c98a00,color:#1a1a2e;
+  classDef comp fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
+  class OK ok; class F1,F2,F3 bad; class CR1,CR2,RF comp;
+```
+
+Unlike example 7 (a self-contained saga), **every box here is a real network
+call** to another service. Durable replay means a crash mid-saga resumes — and
+the compensations still run.
+
+---
+
+## Why this saga lives in the *shell*
+
+Each activity must **capture** the `ServiceInvocationCapability` and then be
+**stored** in a `List[WorkflowActivity]` inside `DaprApp` — a long-lived object.
+Capturing a capability into long-lived storage is exactly what **safe mode
+forbids**, so the orchestration is written in the shell with `@assumeSafe`:
+
+```scala
+@scala.caps.assumeSafe
+class ReserveActivity(using ServiceInvocationCapability)
+    extends WorkflowActivity[OrderRequest, ReservationResult]:
+  def execute(o: OrderRequest): ReservationResult =
+    ServiceInvocationCapability.invoke[ReserveRequest](
+      InventoryService, MethodName("reserve"),
+      ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
+```
+
+The **pure** `09-order-service` module keeps only the safe domain model — the
+DTOs, the `AppId` constants, the sample orders. The boundary is the same
+pure/shell split every example follows; the saga just sits on the impure side.
+
+---
+
+## The orchestration & its compensations (shell)
+
+```scala
+class OrderProcessingWorkflow extends Workflow:
+  def run(using WorkflowContext): Unit =
+    val order = WorkflowContext.getInput[OrderRequest].getOrElse(throw RuntimeException("no input"))
+    val reservation = WorkflowContext.callActivity[ReserveActivity](order).await()
+    if !reservation.reserved then WorkflowContext.complete(OrderResult(false, "out of stock"))
+    else
+      val payment = WorkflowContext.callActivity[ChargeActivity](order).await()
+      if !payment.charged then
+        WorkflowContext.callActivity[ReleaseActivity](releaseOf(reservation, order)).await()  // compensate
+        WorkflowContext.complete(OrderResult(false, "payment declined"))
+      else ... // dispatch, else refund + release, else "shipped ✓"
+```
+
+The nested `if/else` **is** the state-machine diagram. Each `callActivity` returns
+a `Task[O]` you can only `.await()` inside `run` — the capability forbids awaiting
+outside, keeping replay deterministic.
+
+---
+
+## What the two case studies prove
+
+- dapr4s composes to **multi-service systems**, not just single building blocks —
+  7 microservices across 14 modules, all in the same checked model.
+- The **pure handler** is the common case: Grafana's whole pipeline is pure logic
+  over capabilities; the broker, retries, and DLQ stay in config.
+- The **shell** absorbs exactly what safe mode rejects — here, a saga whose
+  activities capture a capability and live in long-lived storage.
+- The **pure/shell boundary is principled**, not arbitrary: code touches the
+  network at every step ⇒ shell; code is a domain model ⇒ pure.
+
+> Same compiler guarantees, real production shapes.
+
+---
+
+<!-- _class: section-break -->
+
 # Part 6
 ## The payoff
 
@@ -885,8 +1120,9 @@ blocking calls under the hood, ready for **JVM virtual threads**.
    lifetimes **visible to the type system**.
 3. **dapr4s** marries them: a **pure, checked core** of business logic over a
    **small, quarantined impure shell**.
-4. The seven examples show it's not a toy — state, messaging, locks, actors,
-   and durable sagas all fit the model.
+4. It's not a toy — the seven examples cover every building block, and **two
+   real-world case studies** (Grafana's scan pipeline, ZEISS's order saga)
+   compose them into multi-service systems.
 5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.
 
 ---

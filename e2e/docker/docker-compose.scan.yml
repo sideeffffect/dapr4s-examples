@@ -1,0 +1,144 @@
+# Multi-service infrastructure for the 08 Grafana-style scan pipeline.
+# Three app containers (gateway, worker, results), each with its own daprd
+# sidecar sharing the app container's network namespace. All sidecars share one
+# Redis (pub/sub + state), so the gateway's published `scan-requested` events
+# fan out to the worker, and the worker's `scan-completed` events reach results.
+# No cross-sidecar service invocation is needed here — the tests drive the
+# gateway and read the dashboard via each app's own HTTP port.
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  gateway:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_GATEWAY}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "scangateway.scanGateway"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  gateway-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:gateway"
+    command:
+      - "./daprd"
+      - "-app-id=scan-gateway"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      gateway:
+        condition: service_started
+
+  worker:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_WORKER}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "scanworker.scanWorker"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  worker-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:worker"
+    command:
+      - "./daprd"
+      - "-app-id=scan-worker"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      worker:
+        condition: service_started
+
+  results:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_RESULTS}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "scanresults.scanResults"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  results-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:results"
+    command:
+      - "./daprd"
+      - "-app-id=scan-results"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      results:
+        condition: service_started
+
+networks:
+  dapr-net:

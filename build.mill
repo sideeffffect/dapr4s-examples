@@ -45,6 +45,17 @@ object `05-distributed-lock` extends PureModule
 object `06-actors` extends PureModule
 object `07-workflows` extends PureModule
 
+// Real-world case study: Grafana-style event-driven vulnerability scanner.
+object `08-scan-gateway` extends PureModule
+object `08-scan-worker` extends PureModule
+object `08-scan-results` extends PureModule
+
+// Real-world case study: ZEISS-style order fulfillment (saga across services).
+object `09-order-service` extends PureModule
+object `09-inventory-service` extends PureModule
+object `09-payment-service` extends PureModule
+object `09-shipping-service` extends PureModule
+
 // Services files from multiple JARs must be merged (not last-wins) so that
 // gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)
 // are all registered. Mill's default rules don't do this, so we add it here.
@@ -70,6 +81,20 @@ object `06-actors-shell` extends ShellModule:
   override def moduleDeps = Seq(`06-actors`)
 object `07-workflows-shell` extends ShellModule:
   override def moduleDeps = Seq(`07-workflows`)
+object `08-scan-gateway-shell` extends ShellModule:
+  override def moduleDeps = Seq(`08-scan-gateway`)
+object `08-scan-worker-shell` extends ShellModule:
+  override def moduleDeps = Seq(`08-scan-worker`)
+object `08-scan-results-shell` extends ShellModule:
+  override def moduleDeps = Seq(`08-scan-results`)
+object `09-order-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`09-order-service`)
+object `09-inventory-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`09-inventory-service`)
+object `09-payment-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`09-payment-service`)
+object `09-shipping-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`09-shipping-service`)
 
 // ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
 // Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
@@ -185,5 +210,12 @@ object e2e extends BaseModule with TestModule.Munit:
       s"-De2e.jar.distributed-lock=${`05-distributed-lock-shell`.assembly().path}",
       s"-De2e.jar.actors=${`06-actors-shell`.assembly().path}",
       s"-De2e.jar.workflows=${`07-workflows-shell`.assembly().path}",
+      s"-De2e.jar.scan-gateway=${`08-scan-gateway-shell`.assembly().path}",
+      s"-De2e.jar.scan-worker=${`08-scan-worker-shell`.assembly().path}",
+      s"-De2e.jar.scan-results=${`08-scan-results-shell`.assembly().path}",
+      s"-De2e.jar.order-service=${`09-order-service-shell`.assembly().path}",
+      s"-De2e.jar.inventory-service=${`09-inventory-service-shell`.assembly().path}",
+      s"-De2e.jar.payment-service=${`09-payment-service-shell`.assembly().path}",
+      s"-De2e.jar.shipping-service=${`09-shipping-service-shell`.assembly().path}",
     )
   }

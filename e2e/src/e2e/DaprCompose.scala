@@ -146,3 +146,66 @@ final class ServerInfra(
 
   override def afterAll(): Unit =
     compose.foreach(_.stop())
+
+/** Dapr infrastructure for multi-service E2E tests (examples 08 and 09).
+  *
+  * Unlike [[ServerInfra]] (one app + one sidecar), this boots a whole compose stack of several app containers, each
+  * paired with its own daprd sidecar sharing the app's network namespace, plus shared redis/placement/scheduler. The
+  * sidecars share one pub/sub + state backend (Redis) and resolve each other for service invocation via mDNS on the
+  * shared bridge network.
+  *
+  * @param composeFileName
+  *   the compose file under e2e/docker/ to boot.
+  * @param jars
+  *   compose env-var name -> jar module name (resolved via [[Harness.jarFor]]); bound into the app containers.
+  * @param daprServices
+  *   the daprd compose service names to wait on (each must log "dapr initialized. Status: Running.").
+  * @param appServices
+  *   compose service names whose app + dapr ports should be exposed to the host.
+  */
+final class MultiServerInfra(
+    composeFileName: String,
+    jars: Map[String, String],
+    daprServices: List[String],
+    appServices: List[String],
+) extends Fixture[Nothing](composeFileName):
+
+  private var compose: Option[ComposeContainer] = None
+
+  def apply(): Nothing = throw UnsupportedOperationException(s"$fixtureName is a lifecycle fixture")
+
+  /** Host-mapped app HTTP port (container 8080) for the given compose service. */
+  def appPort(service: String): Int = compose.get.getServicePort(service, 8080)
+
+  /** Host-mapped Dapr HTTP port (container 3500) for the given compose service. */
+  def daprPort(service: String): Int = compose.get.getServicePort(service, 3500)
+
+  def redisExec(args: String*): String =
+    compose.get
+      .getContainerByServiceName("redis")
+      .orElseThrow()
+      .execInContainer(("redis-cli" +: args.toSeq)*)
+      .getStdout
+      .nn
+      .trim
+
+  override def beforeAll(): Unit =
+    val c = ComposeContainer(composeFile(composeFileName))
+    c.withLocalCompose(true)
+    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
+    jars.foreach((envVar, module) => c.withEnv(envVar, Harness.jarFor(module).toString))
+    appServices.foreach { svc =>
+      c.withExposedService(svc, 8080)
+      c.withExposedService(svc, 3500)
+    }
+    daprServices.foreach { svc =>
+      c.waitingFor(
+        svc,
+        Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(Duration.ofMinutes(5)),
+      )
+    }
+    c.start()
+    compose = Some(c)
+
+  override def afterAll(): Unit =
+    compose.foreach(_.stop())

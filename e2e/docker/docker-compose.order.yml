@@ -1,0 +1,184 @@
+# Multi-service infrastructure for the 09 ZEISS-style order-fulfillment saga.
+# Four app containers (order, inventory, payment, shipping), each with its own
+# daprd sidecar sharing the app's network namespace. The order-service runs a
+# Dapr Workflow whose activities invoke the three downstream services *by app-id*
+# through Dapr service invocation — name resolution is mDNS (the self-hosted
+# default), which works across containers on the shared dapr-net bridge network.
+# The workflow engine needs placement + scheduler and an actor-capable state
+# store (statestore.yaml sets actorStateStore: "true").
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  order:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_ORDER}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "orderservice.orderServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  order-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:order"
+    command:
+      - "./daprd"
+      - "-app-id=order-service"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      order:
+        condition: service_started
+
+  inventory:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_INVENTORY}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "inventoryservice.inventoryServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  inventory-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:inventory"
+    command:
+      - "./daprd"
+      - "-app-id=inventory-service"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      inventory:
+        condition: service_started
+
+  payment:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_PAYMENT}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "paymentservice.paymentServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  payment-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:payment"
+    command:
+      - "./daprd"
+      - "-app-id=payment-service"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      payment:
+        condition: service_started
+
+  shipping:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_SHIPPING}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "shippingservice.shippingServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  shipping-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:shipping"
+    command:
+      - "./daprd"
+      - "-app-id=shipping-service"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      shipping:
+        condition: service_started
+
+networks:
+  dapr-net:
