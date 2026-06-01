@@ -12,11 +12,13 @@ import dapr4s.*
 val PubSubComponent = PubSubName("pubsub")
 val StateStore = StoreName("statestore")
 val ScanCompletedTopic = Topic("scan-completed")
+val DeadLetterTopic = Topic("scan-dead-letter")
 val DashboardKey = StateKey("dashboard")
 
 case class Finding(severity: String, cve: String)
 case class ScanResult(scanId: String, image: String, findings: List[Finding], status: String)
-case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int)
+case class ScanRequest(scanId: String, image: String, source: String)
+case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int, deadLetters: Int)
 
 // Fold one result into the aggregate under optimistic concurrency: concurrent
 // scan-completed events would otherwise read-modify-write the same key and lose
@@ -27,27 +29,41 @@ def onScanCompleted(event: CloudEvent[ScanResult])(using
     JsonCodec[Dashboard],
 ): SubscriptionResult =
   val r = event.data
-  @annotation.tailrec
-  def applyDelta(): Unit =
-    val entry = StateCapability.getWithETag[Dashboard](DashboardKey)
-    val current = entry.value.getOrElse(Dashboard(0, 0, 0))
-    val updated = current.copy(
-      totalScans = current.totalScans + 1,
-      totalFindings = current.totalFindings + r.findings.size,
-      critical = current.critical + r.findings.count(_.severity == "CRITICAL"),
-    )
-    entry.etag match
-      case Some(tag) => if StateCapability.saveWithETag(DashboardKey, updated, tag).isDefined then applyDelta()
-      case None      => StateCapability.save(DashboardKey, updated)
-  applyDelta()
+  updateDashboard(d =>
+    d.copy(
+      totalScans = d.totalScans + 1,
+      totalFindings = d.totalFindings + r.findings.size,
+      critical = d.critical + r.findings.count(_.severity == "CRITICAL"),
+    ),
+  )
   SubscriptionResult.Success
 
+// Dead-lettered scan requests land here after the worker's retry policy is
+// exhausted. We just tally them on the dashboard so the demo can surface the
+// count; a real pipeline would inspect/replay the payload.
+def onDeadLetter(event: CloudEvent[ScanRequest])(using
+    StateCapability,
+    JsonCodec[Dashboard],
+): SubscriptionResult =
+  updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
+  SubscriptionResult.Success
+
+// Compare-and-swap a fold over the dashboard aggregate, retrying on ETag conflict.
+@annotation.tailrec
+def updateDashboard(f: Dashboard => Dashboard)(using StateCapability, JsonCodec[Dashboard]): Unit =
+  val entry = StateCapability.getWithETag[Dashboard](DashboardKey)
+  val updated = f(entry.value.getOrElse(Dashboard(0, 0, 0, 0)))
+  entry.etag match
+    case Some(tag) => if StateCapability.saveWithETag(DashboardKey, updated, tag).isDefined then updateDashboard(f)
+    case None      => StateCapability.save(DashboardKey, updated)
+
 def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
-  StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0))
+  StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
 
 def resultsApp()(using
     DaprCapability,
     JsonCodec[ScanResult],
+    JsonCodec[ScanRequest],
     JsonCodec[Dashboard],
     JsonCodec[Unit],
 ): DaprApp =
@@ -55,10 +71,11 @@ def resultsApp()(using
     // Seed the aggregate once at startup so concurrent updates always have an
     // ETag to compare-and-swap against (avoids a lost-update race on first write).
     if StateCapability.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
-      StateCapability.save(DashboardKey, Dashboard(0, 0, 0))
+      StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
     DaprApp(
       subscriptions = List(
         Subscription[ScanResult](PubSubComponent, ScanCompletedTopic)(onScanCompleted),
+        Subscription[ScanRequest](PubSubComponent, DeadLetterTopic)(onDeadLetter),
       ),
       invocations = List(
         InvocationRoute[Unit, Dashboard](MethodName("dashboard"))(_ => dashboard()),

@@ -11,14 +11,16 @@ import dapr4s.*
 //     state store lets a re-delivered request be dropped instead of re-scanned.
 //   • Retry        — a transient fetch failure returns SubscriptionResult.Retry;
 //     the sidecar redelivers per the subscription's resiliency policy.
-//   • Dead-letter  — after the policy's max retries the sidecar routes the event
-//     to the DLQ topic (configured in the subscription YAML, not in code).
+//   • Dead-letter  — a request that keeps failing past the policy's max retries is
+//     routed by the sidecar to the dead-letter topic (`deadLetterTopic` on the
+//     Subscription below), where the results service records it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val PubSubComponent = PubSubName("pubsub")
 val StateStore = StoreName("statestore")
 val ScanRequestedTopic = Topic("scan-requested")
 val ScanCompletedTopic = Topic("scan-completed")
+val DeadLetterTopic = Topic("scan-dead-letter")
 
 case class ScanRequest(scanId: String, image: String, source: String)
 case class Finding(severity: String, cve: String)
@@ -49,6 +51,10 @@ def onScanRequested(event: CloudEvent[ScanRequest])(using
   if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then
     // Already completed — at-least-once redelivery, safe to discard.
     SubscriptionResult.Drop
+  else if req.source == "poison" then
+    // Permanently failing request — never succeeds, so the sidecar exhausts the
+    // retry policy and routes it to `deadLetterTopic`.
+    SubscriptionResult.Retry
   else
     val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
     StateCapability.save(attemptKey(req.scanId), attempts + 1)
@@ -72,6 +78,8 @@ def workerApp()(using
     DaprCapability.pubsub(PubSubComponent):
       DaprApp(subscriptions =
         List(
-          Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic)(onScanRequested),
+          Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic, deadLetterTopic = Some(DeadLetterTopic))(
+            onScanRequested,
+          ),
         ),
       )

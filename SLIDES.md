@@ -893,10 +893,12 @@ shell each. The fan-out (one topic, many workers) is **Dapr config, not code**.
 | **Fan-out** | broker client + consumer groups | `Subscription` on `scan-requested` |
 | **Idempotency** | dedup table you maintain | `seen-<scanId>` marker in state store |
 | **Retry** | hand-rolled backoff | return `SubscriptionResult.Retry` |
-| **Dead-letter** | poison-message queue plumbing | DLQ topic in subscription **YAML** |
+| **Dead-letter** | poison-message queue plumbing | `deadLetterTopic` on the `Subscription` + a DLQ subscriber |
 
-The worker's handler is **pure business logic** over capabilities — the broker,
-the retry policy, and the DLQ never appear in Scala.
+The worker's handler is **pure business logic** over capabilities. The broker and
+the retry policy stay in config; the dead-letter **topic** is declared right on the
+`Subscription`, and a small DLQ subscriber on the results side tallies the poison
+messages the sidecar routes there.
 
 ---
 
@@ -928,19 +930,28 @@ def onScanRequested(event: CloudEvent[ScanRequest])(using
   val req = event.data
   if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then
     SubscriptionResult.Drop                                  // already done — discard
+  else if req.source == "poison" then
+    SubscriptionResult.Retry                                 // never succeeds → sidecar dead-letters it
   else
     val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
     StateCapability.save(attemptKey(req.scanId), attempts + 1)
     if req.source == "flaky" && attempts == 0 then
-      SubscriptionResult.Retry                               // transient — redeliver
+      SubscriptionResult.Retry                               // transient — Dapr retries (Resiliency policy)
     else
       PubSubCapability.publish(ScanCompletedTopic, scan(req))
       StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
       SubscriptionResult.Success                             // ack
+
+// the dead-letter topic is declared on the Subscription, not in the handler:
+Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic,
+                          deadLetterTopic = Some(DeadLetterTopic))(onScanRequested)
 ```
 
 `Drop` / `Retry` / `Success` are the **only** three answers — the type makes the
-at-least-once contract explicit, and the sidecar handles redelivery and the DLQ.
+at-least-once contract explicit. A Dapr **Resiliency** policy (`components/resiliency.yaml`
+— config, not Scala) drives redelivery: with the Redis pub/sub component a `Retry` is
+re-invoked **inline** by resiliency. Once a request exhausts the policy's retries the
+sidecar routes it to `deadLetterTopic`, where the results service tallies it.
 
 ---
 
@@ -1051,7 +1062,8 @@ outside, keeping replay deterministic.
 - dapr4s composes to **multi-service systems**, not just single building blocks —
   7 microservices across 14 modules, all in the same checked model.
 - The **pure handler** is the common case: Grafana's whole pipeline is pure logic
-  over capabilities; the broker, retries, and DLQ stay in config.
+  over capabilities; the broker and retry policy stay in config, the dead-letter
+  topic is one field on the `Subscription`.
 - The **shell** absorbs exactly what safe mode rejects — here, a saga whose
   activities capture a capability and live in long-lived storage.
 - The **pure/shell boundary is principled**, not arbitrary: code touches the

@@ -17,6 +17,7 @@ object Codecs:
   // ReadWriter (not JsonCodec) so macroRW can derive the nested List[Finding].
   given upickle.default.ReadWriter[Finding] = upickle.default.macroRW
   given JsonCodec[ScanResult] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[ScanRequest] = upickleCodec(using upickle.default.macroRW)
   given JsonCodec[Dashboard] = upickleCodec(using upickle.default.macroRW)
   given JsonCodec[Unit] with
     def encode(value: Unit): String = "null"

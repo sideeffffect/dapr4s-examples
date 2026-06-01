@@ -25,13 +25,18 @@ class ScanPipelineTest extends E2ESuite:
   )
   override def munitFixtures = List(infra)
 
-  private case class Snapshot(totalScans: Int, totalFindings: Int, critical: Int)
+  private case class Snapshot(totalScans: Int, totalFindings: Int, critical: Int, deadLetters: Int)
 
   private def dashboard(): Snapshot =
     val (status, body) = DaprHttp.appPost(infra.appPort("results"), "/dashboard", "")
     assertEquals(status, 200, clue(body))
     val j = ujson.read(body)
-    Snapshot(j("totalScans").num.toInt, j("totalFindings").num.toInt, j("critical").num.toInt)
+    Snapshot(
+      j("totalScans").num.toInt,
+      j("totalFindings").num.toInt,
+      j("critical").num.toInt,
+      j("deadLetters").num.toInt,
+    )
 
   private def submit(scanId: String, image: String, source: String): Unit =
     val body = s"""{"scanId":"$scanId","image":"$image","source":"$source"}"""
@@ -73,4 +78,13 @@ class ScanPipelineTest extends E2ESuite:
     submit("scan-flaky", "ghcr.io/acme/worker:2.0", "flaky") // first delivery NAKs, redelivery succeeds
     val after = waitForDashboard(120_000)(s => s.totalScans >= before.totalScans + 1)
     assert(after.totalScans >= before.totalScans + 1, clue((before, after)))
+  }
+
+  test("poison scan is dead-lettered after retries are exhausted") {
+    val before = dashboard()
+    submit("scan-poison", "ghcr.io/acme/bad:1.0", "poison") // always NAKs → routed to dead-letter topic
+    val after = waitForDashboard(120_000)(s => s.deadLetters >= before.deadLetters + 1)
+    assert(after.deadLetters >= before.deadLetters + 1, clue((before, after)))
+    // A dead-lettered request must never count as a completed scan.
+    assertEquals(after.totalScans, before.totalScans, clue((before, after)))
   }
