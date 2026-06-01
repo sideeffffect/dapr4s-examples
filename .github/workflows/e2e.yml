@@ -74,7 +74,7 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
 
       - name: Build slides PDF
-        run: ./mill show slides
+        run: ./mill slides
         env:
           CHROME_PATH: /usr/bin/google-chrome
 

@@ -79,7 +79,8 @@ object `07-workflows-shell` extends ShellModule:
 // Requirements on PATH (or via env): mmdc, npx, and a Chromium/Chrome binary.
 // Override the browser with CHROME_PATH if auto-detection fails.
 //
-//   ./mill show slides     # build the PDF; prints its path under out/
+//   ./mill slides          # build the PDF (lands at out/slides.dest/SLIDES.pdf)
+//   ./mill show slides     # same, but also prints the PDF path as JSON
 // ─────────────────────────────────────────────────────────────────────────────
 def slidesSource = Task.Source("SLIDES.md")
 
