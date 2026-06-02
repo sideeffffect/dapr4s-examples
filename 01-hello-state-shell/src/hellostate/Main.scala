@@ -5,7 +5,7 @@ import dapr4s.*
 // ── Impure shell ──────────────────────────────────────────────────────────────
 // Derives JsonCodec[Note] (macro derivation is impure), starts the Dapr
 // runtime, establishes the capability scope, and prints the structured result
-// returned by the pure helloStateApp.
+// returned by the pure HelloStateApp.
 // ─────────────────────────────────────────────────────────────────────────────
 
 private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
@@ -33,7 +33,7 @@ private def daprConfigFromEnv(): DaprConfig =
 @main def run(): Unit =
   println("=== 01 hello-state: state CRUD with capability scoping ===\n")
   Dapr(daprConfigFromEnv()).run:
-    val r = helloStateApp()
+    val r = HelloStateApp()
     println(s"saved:        ${r.saved}")
     println(s"etag save:    ${if r.etagConflict.isEmpty then "ok" else s"conflict: ${r.etagConflict.get.getMessage}"}")
     println(s"after update: ${r.afterUpdate}")

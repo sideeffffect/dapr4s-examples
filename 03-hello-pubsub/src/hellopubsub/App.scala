@@ -19,15 +19,17 @@ def onMessage(event: CloudEvent[Message])(using PubSubCapability, JsonCodec[Mess
   PubSubCapability.publish(Topic("hello-replies"), msg.copy(from = "subscriber"))
   SubscriptionResult.Success
 
-def subscriberApp()(using DaprCapability, JsonCodec[Message]): DaprApp =
-  DaprCapability.pubsub(PubSubComponent):
-    DaprApp(subscriptions =
-      List(
-        Subscription[Message](PubSubComponent, MessageTopic)(onMessage),
-      ),
-    )
+object SubscriberApp:
+  def apply()(using DaprCapability, JsonCodec[Message]): DaprApp =
+    DaprCapability.pubsub(PubSubComponent):
+      DaprApp(subscriptions =
+        List(
+          Subscription[Message](PubSubComponent, MessageTopic)(onMessage),
+        ),
+      )
 
-def publisherApp()(using DaprCapability, JsonCodec[Message]): Unit =
-  DaprCapability.pubsub(PubSubComponent):
-    for i <- 1 to 5 do
-      PubSubCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))
+object PublisherApp:
+  def apply()(using DaprCapability, JsonCodec[Message]): Unit =
+    DaprCapability.pubsub(PubSubComponent):
+      for i <- 1 to 5 do
+        PubSubCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))

@@ -41,12 +41,12 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8084)
   println(s"=== 04 service-invocation: callee on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    calleeApp()
+    CalleeApp()
 
 @main def caller(): Unit =
   println("=== 04 service-invocation: caller ===\n")
   Dapr(daprConfigFromEnv(defaultAppPort = 8084)).run:
-    val result = callerApp()
+    val result = CallerApp()
     result.greetings.foreach(r => println(s"${r.greeting}  (from: ${r.from})"))
     println()
     println(s"Total requests: ${result.stats.totalRequests}")

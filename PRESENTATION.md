@@ -431,29 +431,30 @@ final case class DaprApp(
 ## Example 01: State Management
 
 ```scala
-def helloStateApp()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-  DaprCapability.state(StoreName("statestore")):
-    val key = StateKey("hello-note")
+object HelloStateApp:
+  def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
+    DaprCapability.state(StoreName("statestore")):
+      val key = StateKey("hello-note")
 
-    // Basic save & get
-    StateCapability.save(key, Note("Hello from dapr4s!", 1))
-    val saved = StateCapability.get[Note](key)
+      // Basic save & get
+      StateCapability.save(key, Note("Hello from dapr4s!", 1))
+      val saved = StateCapability.get[Note](key)
 
-    // Optimistic concurrency with ETags
-    val entry = StateCapability.getWithETag[Note](key)
-    val conflict: Option[ETagMismatchException] =
-      (entry.value, entry.etag) match
-        case (Some(n), Some(etag)) =>
-          StateCapability.saveWithETag(key, n.copy(revision = n.revision + 1), etag)
-        case _ => None
+      // Optimistic concurrency with ETags
+      val entry = StateCapability.getWithETag[Note](key)
+      val conflict: Option[ETagMismatchException] =
+        (entry.value, entry.etag) match
+          case (Some(n), Some(etag)) =>
+            StateCapability.saveWithETag(key, n.copy(revision = n.revision + 1), etag)
+          case _ => None
 
-    // Atomic transaction: upsert two, delete one
-    StateCapability.transaction(Seq(
-      StateOp.UpsertOp[Note](StateKey("note-a"), Note("A", 1)),
-      StateOp.UpsertOp[Note](StateKey("note-b"), Note("B", 1)),
-      StateOp.DeleteOp(key),
-    ))
-    ...
+      // Atomic transaction: upsert two, delete one
+      StateCapability.transaction(Seq(
+        StateOp.UpsertOp[Note](StateKey("note-a"), Note("A", 1)),
+        StateOp.UpsertOp[Note](StateKey("note-b"), Note("B", 1)),
+        StateOp.DeleteOp(key),
+      ))
+      ...
 ```
 
 ---
@@ -527,13 +528,14 @@ val configKeys: Seq[ConfigKey] = Seq(
 
 ```scala
 // Publisher
-def publisherApp()(using DaprCapability, JsonCodec[Message]): Unit =
-  DaprCapability.pubsub(PubSubName("pubsub")):
-    for i <- 1 to 5 do
-      PubSubCapability.publish(
-        Topic("hello-topic"),
-        Message(from = "publisher", text = "hello world", sequenceNo = i),
-      )
+object PublisherApp:
+  def apply()(using DaprCapability, JsonCodec[Message]): Unit =
+    DaprCapability.pubsub(PubSubName("pubsub")):
+      for i <- 1 to 5 do
+        PubSubCapability.publish(
+          Topic("hello-topic"),
+          Message(from = "publisher", text = "hello world", sequenceNo = i),
+        )
 
 // Subscriber — handler captures PubSubCapability to republish
 def onMessage(event: CloudEvent[Message])(using PubSubCapability, JsonCodec[Message]): SubscriptionResult =
@@ -574,17 +576,18 @@ Handler returns `SubscriptionResult`:
 ## Declaring a subscription
 
 ```scala
-def subscriberApp()(using DaprCapability, JsonCodec[Message]): DaprApp =
-  DaprCapability.pubsub(PubSubComponent):
-    DaprApp(subscriptions =
-      List(
-        // Default route: "/" + topic.value
-        Subscription[Message](PubSubName("pubsub"), Topic("hello-topic"))(onMessage),
+object SubscriberApp:
+  def apply()(using DaprCapability, JsonCodec[Message]): DaprApp =
+    DaprCapability.pubsub(PubSubComponent):
+      DaprApp(subscriptions =
+        List(
+          // Default route: "/" + topic.value
+          Subscription[Message](PubSubName("pubsub"), Topic("hello-topic"))(onMessage),
 
-        // Custom route:
-        Subscription[Message](PubSubName("pubsub"), Topic("orders"), Route("/order-handler"))(handle),
-      ),
-    )
+          // Custom route:
+          Subscription[Message](PubSubName("pubsub"), Topic("orders"), Route("/order-handler"))(handle),
+        ),
+      )
 ```
 
 The `Subscription` factory uses `@assumeSafe` internally to erase the handler's capture set — so a `List[Subscription]` is a plain, capture-free value the server can store safely.
@@ -596,25 +599,27 @@ The `Subscription` factory uses `@assumeSafe` internally to erase the handler's 
 ```scala
 // ── Callee: declare methods the sidecar can route to ──────────────────────
 
-def calleeApp()(using DaprCapability, /* codecs... */): DaprApp =
-  DaprCapability.state(StatStore):
-    DaprApp(invocations =
-      List(
-        InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
-        InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
-      ),
-    )
+object CalleeApp:
+  def apply()(using DaprCapability, /* codecs... */): DaprApp =
+    DaprCapability.state(StatStore):
+      DaprApp(invocations =
+        List(
+          InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
+          InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
+        ),
+      )
 
 // ── Caller: invoke another service ────────────────────────────────────────
 
-def callerApp()(using DaprCapability, /* codecs... */): CallerResult =
-  DaprCapability.invoker:
-    ServiceInvocationCapability.invoke[GreetRequest](
-      AppId("greeting-service"),
-      MethodName("greet"),
-      GreetRequest("Alice", "en"),
-      HttpMethod.Post,
-    )[GreetResponse]
+object CallerApp:
+  def apply()(using DaprCapability, /* codecs... */): CallerResult =
+    DaprCapability.invoker:
+      ServiceInvocationCapability.invoke[GreetRequest](
+        AppId("greeting-service"),
+        MethodName("greet"),
+        GreetRequest("Alice", "en"),
+        HttpMethod.Post,
+      )[GreetResponse]
 ```
 
 ---
@@ -926,7 +931,7 @@ class FakeStateCapability extends StateCapability:
 test("hello state"):
   val fakeState: StateCapability = FakeStateCapability()
   given DaprCapability = FakeDaprCapability(state = fakeState)
-  val result = helloStateApp()
+  val result = HelloStateApp()
   assertEquals(result.saved, Some(Note("Hello from dapr4s!", 1)))
 ```
 

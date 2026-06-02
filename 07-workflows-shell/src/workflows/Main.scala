@@ -43,12 +43,12 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8087)
   println(s"=== 07 workflows: OrderProcessingWorkflow server on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    serverApp()
+    ServerApp()
 
 @main def workflowDriver(): Unit =
   println("=== 07 workflows: OrderProcessingWorkflow driver ===\n")
   Dapr(daprConfigFromEnv(defaultAppPort = 8087)).run:
-    val results = driverApp(WorkflowName("OrderProcessingWorkflow"), timeout = 30.seconds)
+    val results = DriverApp(WorkflowName("OrderProcessingWorkflow"), timeout = 30.seconds)
     results.foreach: r =>
       if r.timedOut then println(s"\nOrder ${r.orderId}: TIMED OUT")
       else

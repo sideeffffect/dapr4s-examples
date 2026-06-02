@@ -36,7 +36,7 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8088)
   println(s"=== 08 scan-pipeline: gateway on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    gatewayApp()
+    GatewayApp()
 
 @main def scanSeed(): Unit =
   println("=== 08 scan-pipeline: seeding scan-requested ===\n")

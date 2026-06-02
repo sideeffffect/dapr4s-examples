@@ -46,7 +46,7 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8086)
   println(s"=== 06 actors: CounterActor server on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    counterActorApp(tickInterval = 3.seconds, tickDelay = Some(3.seconds), reminderDelay = 30.seconds)
+    CounterActorApp(tickInterval = 3.seconds, tickDelay = Some(3.seconds), reminderDelay = 30.seconds)
 
 @main def actorDriver(): Unit =
   println("=== 06 actors: CounterActor driver ===\n")

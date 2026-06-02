@@ -79,24 +79,25 @@ class OrderProcessingWorkflow(using
 
 // ── Server app ────────────────────────────────────────────────────────────────
 
-def serverApp()(using
-    JsonCodec[OrderRequest],
-    JsonCodec[ReservationResult],
-    JsonCodec[PaymentResult],
-    JsonCodec[ShipmentResult],
-    JsonCodec[OrderResult],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprApp(
-    workflows = List(new OrderProcessingWorkflow),
-    activities = List(
-      new ReserveInventory,
-      new CancelReservation,
-      new ChargePayment,
-      new RefundPayment,
-      new DispatchShipment,
-    ),
-  )
+object ServerApp:
+  def apply()(using
+      JsonCodec[OrderRequest],
+      JsonCodec[ReservationResult],
+      JsonCodec[PaymentResult],
+      JsonCodec[ShipmentResult],
+      JsonCodec[OrderResult],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprApp(
+      workflows = List(new OrderProcessingWorkflow),
+      activities = List(
+        new ReserveInventory,
+        new CancelReservation,
+        new ChargePayment,
+        new RefundPayment,
+        new DispatchShipment,
+      ),
+    )
 
 // ── Driver app ────────────────────────────────────────────────────────────────
 
@@ -114,12 +115,13 @@ def processOrder(
         val result = snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
         ProcessOrderResult(order.orderId, timedOut = false, result = result)
 
-def driverApp(
-    name: WorkflowName,
-    timeout: FiniteDuration,
-)(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): List[ProcessOrderResult] =
-  List(
-    processOrder(OrderRequest("ORD-001", item = "widget", quantity = 3, budget = 25.0), name, timeout),
-    processOrder(OrderRequest("ORD-002", item = "gadget", quantity = 10, budget = 50.0), name, timeout),
-    processOrder(OrderRequest("ORD-003", item = "gizmo", quantity = 1, budget = 5.0), name, timeout),
-  )
+object DriverApp:
+  def apply(
+      name: WorkflowName,
+      timeout: FiniteDuration,
+  )(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): List[ProcessOrderResult] =
+    List(
+      processOrder(OrderRequest("ORD-001", item = "widget", quantity = 3, budget = 25.0), name, timeout),
+      processOrder(OrderRequest("ORD-002", item = "gadget", quantity = 10, budget = 50.0), name, timeout),
+      processOrder(OrderRequest("ORD-003", item = "gizmo", quantity = 1, budget = 5.0), name, timeout),
+    )

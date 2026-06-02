@@ -7,7 +7,7 @@ import scala.concurrent.duration.*
 // This whole module is pure (capture-checked "safe mode").  Because
 // WorkflowActivity.execute now receives a DaprCapability on every call, the
 // activities perform their cross-service invocations without capturing a
-// capability in a field — so the activities, the saga workflow, and serverApp
+// capability in a field — so the activities, the saga workflow, and ServerApp
 // all live here rather than in the shell.  Capabilities are only ever used
 // within the call that receives them; the JsonCodecs activities/workflows need
 // are plain values threaded in as `using` parameters.  The only thing left in
@@ -64,13 +64,14 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
         result = snap.serializedOutput.flatMap(_.decode[OrderResult].toOption),
       )
 
-def driverApp(timeout: FiniteDuration)(using
-    DaprCapability,
-    JsonCodec[OrderRequest],
-    JsonCodec[OrderResult],
-): List[ProcessOrderResult] =
-  DaprCapability.workflow:
-    sampleOrders.map(processOrder(_, timeout))
+object DriverApp:
+  def apply(timeout: FiniteDuration)(using
+      DaprCapability,
+      JsonCodec[OrderRequest],
+      JsonCodec[OrderResult],
+  ): List[ProcessOrderResult] =
+    DaprCapability.workflow:
+      sampleOrders.map(processOrder(_, timeout))
 
 // ── Activities — each performs one cross-service call ─────────────────────────
 // Pure under safe mode: `execute` receives the DaprCapability per call and uses
@@ -157,32 +158,33 @@ class OrderProcessingWorkflow(using
 
 // ── Server app ────────────────────────────────────────────────────────────────
 
-def serverApp(timeout: FiniteDuration)(using
-    DaprCapability,
-    JsonCodec[OrderRequest],
-    JsonCodec[OrderResult],
-    JsonCodec[ReservationResult],
-    JsonCodec[PaymentResult],
-    JsonCodec[ShipmentResult],
-    JsonCodec[ReserveRequest],
-    JsonCodec[ChargeRequest],
-    JsonCodec[ShipRequest],
-    JsonCodec[ReleaseRequest],
-    JsonCodec[RefundRequest],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprCapability.workflow:
-    DaprApp(
-      workflows = List(new OrderProcessingWorkflow),
-      activities = List(
-        new ReserveActivity,
-        new ChargeActivity,
-        new DispatchActivity,
-        new ReleaseActivity,
-        new RefundActivity,
-      ),
-      invocations = List(
-        InvocationRoute[OrderRequest, OrderResult](MethodName("submit-order")): order =>
-          processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out")),
-      ),
-    )
+object ServerApp:
+  def apply(timeout: FiniteDuration)(using
+      DaprCapability,
+      JsonCodec[OrderRequest],
+      JsonCodec[OrderResult],
+      JsonCodec[ReservationResult],
+      JsonCodec[PaymentResult],
+      JsonCodec[ShipmentResult],
+      JsonCodec[ReserveRequest],
+      JsonCodec[ChargeRequest],
+      JsonCodec[ShipRequest],
+      JsonCodec[ReleaseRequest],
+      JsonCodec[RefundRequest],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprCapability.workflow:
+      DaprApp(
+        workflows = List(new OrderProcessingWorkflow),
+        activities = List(
+          new ReserveActivity,
+          new ChargeActivity,
+          new DispatchActivity,
+          new ReleaseActivity,
+          new RefundActivity,
+        ),
+        invocations = List(
+          InvocationRoute[OrderRequest, OrderResult](MethodName("submit-order")): order =>
+            processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out")),
+        ),
+      )

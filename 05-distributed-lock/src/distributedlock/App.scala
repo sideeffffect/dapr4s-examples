@@ -16,35 +16,36 @@ case class LockDemoResult(
     afterRelease: Boolean, // attempted after A releases  — expected true
 )
 
-def distributedLockApp()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
-  DaprCapability.state(StoreName("statestore")):
-    DaprCapability.lock(StoreName("lockstore")):
-      val resource = LockResourceId("my-resource")
-      val counter = StateKey("lock-counter")
+object DistributedLockApp:
+  def apply()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
+    DaprCapability.state(StoreName("statestore")):
+      DaprCapability.lock(StoreName("lockstore")):
+        val resource = LockResourceId("my-resource")
+        val counter = StateKey("lock-counter")
 
-      StateCapability.save(counter, 0)
+        StateCapability.save(counter, 0)
 
-      val N = 5
-      for i <- 1 to N do
-        val owner = LockOwner(s"worker-$i")
-        if DistributedLockCapability.tryLock(resource, owner, expirySeconds = 10) then
-          try
-            val v = StateCapability.get[Int](counter).getOrElse(0)
-            StateCapability.save(counter, v + 1)
-          finally DistributedLockCapability.unlock(resource, owner)
+        val N = 5
+        for i <- 1 to N do
+          val owner = LockOwner(s"worker-$i")
+          if DistributedLockCapability.tryLock(resource, owner, expirySeconds = 10) then
+            try
+              val v = StateCapability.get[Int](counter).getOrElse(0)
+              StateCapability.save(counter, v + 1)
+            finally DistributedLockCapability.unlock(resource, owner)
 
-      val finalCounter = StateCapability.get[Int](counter).getOrElse(-1)
+        val finalCounter = StateCapability.get[Int](counter).getOrElse(-1)
 
-      val ownerA = LockOwner("process-A")
-      val ownerB = LockOwner("process-B")
-      val secondAcquire =
-        if DistributedLockCapability.tryLock(resource, ownerA, expirySeconds = 10) then
-          val second = DistributedLockCapability.tryLock(resource, ownerB, expirySeconds = 1)
-          DistributedLockCapability.unlock(resource, ownerA)
-          second
-        else false
+        val ownerA = LockOwner("process-A")
+        val ownerB = LockOwner("process-B")
+        val secondAcquire =
+          if DistributedLockCapability.tryLock(resource, ownerA, expirySeconds = 10) then
+            val second = DistributedLockCapability.tryLock(resource, ownerB, expirySeconds = 1)
+            DistributedLockCapability.unlock(resource, ownerA)
+            second
+          else false
 
-      val afterRelease = DistributedLockCapability.tryLock(resource, ownerB, expirySeconds = 10)
-      if afterRelease then DistributedLockCapability.unlock(resource, ownerB)
+        val afterRelease = DistributedLockCapability.tryLock(resource, ownerB, expirySeconds = 10)
+        if afterRelease then DistributedLockCapability.unlock(resource, ownerB)
 
-      LockDemoResult(finalCounter, N, secondAcquire, afterRelease)
+        LockDemoResult(finalCounter, N, secondAcquire, afterRelease)

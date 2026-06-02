@@ -28,18 +28,19 @@ def release(req: ReleaseRequest)(using StateCapability, JsonCodec[Int]): Unit =
   val current = StateCapability.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
   StateCapability.save(stockKey(req.sku), current + req.quantity)
 
-def inventoryApp()(using
-    DaprCapability,
-    JsonCodec[ReserveRequest],
-    JsonCodec[ReservationResult],
-    JsonCodec[ReleaseRequest],
-    JsonCodec[Int],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprCapability.state(StateStore):
-    DaprApp(invocations =
-      List(
-        InvocationRoute[ReserveRequest, ReservationResult](MethodName("reserve"))(reserve),
-        InvocationRoute[ReleaseRequest, Unit](MethodName("release"))(release),
-      ),
-    )
+object InventoryApp:
+  def apply()(using
+      DaprCapability,
+      JsonCodec[ReserveRequest],
+      JsonCodec[ReservationResult],
+      JsonCodec[ReleaseRequest],
+      JsonCodec[Int],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprCapability.state(StateStore):
+      DaprApp(invocations =
+        List(
+          InvocationRoute[ReserveRequest, ReservationResult](MethodName("reserve"))(reserve),
+          InvocationRoute[ReleaseRequest, Unit](MethodName("release"))(release),
+        ),
+      )

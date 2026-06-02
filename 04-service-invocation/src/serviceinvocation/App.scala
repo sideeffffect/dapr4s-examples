@@ -41,45 +41,47 @@ def stats()(using StateCapability, JsonCodec[ServiceStats]): StatsResponse =
   val s = StateCapability.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
   StatsResponse(s.count, s.languages)
 
-def calleeApp()(using
-    DaprCapability,
-    JsonCodec[ServiceStats],
-    JsonCodec[GreetRequest],
-    JsonCodec[GreetResponse],
-    JsonCodec[StatsResponse],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprCapability.state(StatStore):
-    DaprApp(invocations =
-      List(
-        InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
-        InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
-      ),
-    )
+object CalleeApp:
+  def apply()(using
+      DaprCapability,
+      JsonCodec[ServiceStats],
+      JsonCodec[GreetRequest],
+      JsonCodec[GreetResponse],
+      JsonCodec[StatsResponse],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprCapability.state(StatStore):
+      DaprApp(invocations =
+        List(
+          InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
+          InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
+        ),
+      )
 
 // ── Caller ────────────────────────────────────────────────────────────────────
 
-def callerApp()(using
-    DaprCapability,
-    JsonCodec[GreetRequest],
-    JsonCodec[GreetResponse],
-    JsonCodec[StatsResponse],
-): CallerResult =
-  DaprCapability.invoker:
-    val target = AppId("greeting-service")
-    val requests = List(
-      GreetRequest("Alice", "en"),
-      GreetRequest("Bob", "es"),
-      GreetRequest("Carol", "fr"),
-      GreetRequest("Dave", "de"),
-      GreetRequest("Eve", "jp"),
-    )
-    val greetings = requests.map: req =>
-      ServiceInvocationCapability.invoke[GreetRequest](
-        target,
-        MethodName("greet"),
-        req,
-        HttpMethod.Post,
-      )[GreetResponse]
-    val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
-    CallerResult(greetings, s)
+object CallerApp:
+  def apply()(using
+      DaprCapability,
+      JsonCodec[GreetRequest],
+      JsonCodec[GreetResponse],
+      JsonCodec[StatsResponse],
+  ): CallerResult =
+    DaprCapability.invoker:
+      val target = AppId("greeting-service")
+      val requests = List(
+        GreetRequest("Alice", "en"),
+        GreetRequest("Bob", "es"),
+        GreetRequest("Carol", "fr"),
+        GreetRequest("Dave", "de"),
+        GreetRequest("Eve", "jp"),
+      )
+      val greetings = requests.map: req =>
+        ServiceInvocationCapability.invoke[GreetRequest](
+          target,
+          MethodName("greet"),
+          req,
+          HttpMethod.Post,
+        )[GreetResponse]
+      val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
+      CallerResult(greetings, s)

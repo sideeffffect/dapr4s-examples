@@ -79,12 +79,13 @@ def counterActorDefinition(
       reminders = List(ActorReminderRoute[String](ResetReminder)(onReset)),
     )
 
-def counterActorApp(
-    tickInterval: FiniteDuration,
-    tickDelay: Option[FiniteDuration],
-    reminderDelay: FiniteDuration,
-)(using JsonCodec[IncrBy], JsonCodec[CounterState], JsonCodec[Int], JsonCodec[Unit], JsonCodec[String]): DaprApp =
-  DaprApp(actors = List(counterActorDefinition(tickInterval, tickDelay, reminderDelay)))
+object CounterActorApp:
+  def apply(
+      tickInterval: FiniteDuration,
+      tickDelay: Option[FiniteDuration],
+      reminderDelay: FiniteDuration,
+  )(using JsonCodec[IncrBy], JsonCodec[CounterState], JsonCodec[Int], JsonCodec[Unit], JsonCodec[String]): DaprApp =
+    DaprApp(actors = List(counterActorDefinition(tickInterval, tickDelay, reminderDelay)))
 
 // ── Driver helper methods ─────────────────────────────────────────────────────
 

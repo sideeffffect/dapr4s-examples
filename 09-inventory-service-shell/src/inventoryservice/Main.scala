@@ -41,4 +41,4 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8092)
   println(s"=== 09 order-fulfillment: inventory-service on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    inventoryApp()
+    InventoryApp()

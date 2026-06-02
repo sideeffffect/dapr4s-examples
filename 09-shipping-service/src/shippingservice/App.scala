@@ -15,9 +15,10 @@ def dispatch(req: ShipRequest): ShipmentResult =
   val ok = req.address.nonEmpty
   ShipmentResult(dispatched = ok, if ok then s"TRK-${req.orderId}" else "")
 
-def shippingApp()(using JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): DaprApp =
-  DaprApp(invocations =
-    List(
-      InvocationRoute[ShipRequest, ShipmentResult](MethodName("dispatch"))(dispatch),
-    ),
-  )
+object ShippingApp:
+  def apply()(using JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): DaprApp =
+    DaprApp(invocations =
+      List(
+        InvocationRoute[ShipRequest, ShipmentResult](MethodName("dispatch"))(dispatch),
+      ),
+    )

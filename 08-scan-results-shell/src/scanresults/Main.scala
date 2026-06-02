@@ -42,4 +42,4 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8090)
   println(s"=== 08 scan-pipeline: results on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    resultsApp()
+    ResultsApp()

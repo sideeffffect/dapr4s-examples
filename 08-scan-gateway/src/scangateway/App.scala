@@ -22,13 +22,14 @@ def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Su
   PubSubCapability.publish(ScanRequestedTopic, req)
   SubmitResponse(accepted = true, req.scanId)
 
-def gatewayApp()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
-  DaprCapability.pubsub(PubSubComponent):
-    DaprApp(invocations =
-      List(
-        InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit),
-      ),
-    )
+object GatewayApp:
+  def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
+    DaprCapability.pubsub(PubSubComponent):
+      DaprApp(invocations =
+        List(
+          InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit),
+        ),
+      )
 
 // ── Seed driver (stands in for the SQS input binding) ─────────────────────────
 // Includes a duplicate scan-3 (the worker must dedup it) and a "flaky" source

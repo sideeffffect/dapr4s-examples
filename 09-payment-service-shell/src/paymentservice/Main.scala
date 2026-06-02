@@ -40,4 +40,4 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8093)
   println(s"=== 09 order-fulfillment: payment-service on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    paymentApp()
+    PaymentApp()

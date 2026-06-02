@@ -7,8 +7,8 @@ import scala.concurrent.duration.*
 // Only the parts that safe mode genuinely rejects live here: the upickle codec
 // derivations (upickle is not capture-aware, hence @assumeSafe) and the `@main`
 // entry points (which do console I/O).  Everything else — the domain model, the
-// activities, the saga workflow, serverApp, and the workflow-client logic
-// (processOrder / driverApp) — is pure and lives in the non-shell module (see
+// activities, the saga workflow, ServerApp, and the workflow-client logic
+// (processOrder / DriverApp) — is pure and lives in the non-shell module (see
 // App.scala).  The activities no longer capture a ServiceInvocationCapability:
 // WorkflowActivity.execute now receives a DaprCapability per call.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,12 +56,12 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val config = daprConfigFromEnv(defaultAppPort = 8091)
   println(s"=== 09 order-fulfillment: order-service (saga) on port ${config.appServer.port} ===\n")
   Dapr(config).serve:
-    serverApp(timeout = 30.seconds)
+    ServerApp(timeout = 30.seconds)
 
 @main def orderDriver(): Unit =
   println("=== 09 order-fulfillment: driver ===\n")
   Dapr(daprConfigFromEnv(defaultAppPort = 8091)).run:
-    val results = driverApp(timeout = 30.seconds)
+    val results = DriverApp(timeout = 30.seconds)
     results.foreach: r =>
       if r.timedOut then println(s"\nOrder ${r.orderId}: TIMED OUT")
       else

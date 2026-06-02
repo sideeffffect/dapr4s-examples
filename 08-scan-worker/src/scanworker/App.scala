@@ -67,19 +67,20 @@ def onScanRequested(event: CloudEvent[ScanRequest])(using
       StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
       SubscriptionResult.Success
 
-def workerApp()(using
-    DaprCapability,
-    JsonCodec[ScanRequest],
-    JsonCodec[SeenMarker],
-    JsonCodec[Int],
-    JsonCodec[ScanResult],
-): DaprApp =
-  DaprCapability.state(StateStore):
-    DaprCapability.pubsub(PubSubComponent):
-      DaprApp(subscriptions =
-        List(
-          Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic, deadLetterTopic = Some(DeadLetterTopic))(
-            onScanRequested,
+object WorkerApp:
+  def apply()(using
+      DaprCapability,
+      JsonCodec[ScanRequest],
+      JsonCodec[SeenMarker],
+      JsonCodec[Int],
+      JsonCodec[ScanResult],
+  ): DaprApp =
+    DaprCapability.state(StateStore):
+      DaprCapability.pubsub(PubSubComponent):
+        DaprApp(subscriptions =
+          List(
+            Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic, deadLetterTopic = Some(DeadLetterTopic))(
+              onScanRequested,
+            ),
           ),
-        ),
-      )
+        )

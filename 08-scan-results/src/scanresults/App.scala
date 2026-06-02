@@ -23,7 +23,7 @@ case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int, deadLet
 // Fold one result into the aggregate under optimistic concurrency: concurrent
 // scan-completed events would otherwise read-modify-write the same key and lose
 // updates. We compare-and-swap on the ETag and retry on conflict. The aggregate
-// is seeded once at startup (see `resultsApp`) so every update has an ETag.
+// is seeded once at startup (see `ResultsApp`) so every update has an ETag.
 def onScanCompleted(event: CloudEvent[ScanResult])(using
     StateCapability,
     JsonCodec[Dashboard],
@@ -60,24 +60,25 @@ def updateDashboard(f: Dashboard => Dashboard)(using StateCapability, JsonCodec[
 def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
   StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
 
-def resultsApp()(using
-    DaprCapability,
-    JsonCodec[ScanResult],
-    JsonCodec[ScanRequest],
-    JsonCodec[Dashboard],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprCapability.state(StateStore):
-    // Seed the aggregate once at startup so concurrent updates always have an
-    // ETag to compare-and-swap against (avoids a lost-update race on first write).
-    if StateCapability.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
-      StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
-    DaprApp(
-      subscriptions = List(
-        Subscription[ScanResult](PubSubComponent, ScanCompletedTopic)(onScanCompleted),
-        Subscription[ScanRequest](PubSubComponent, DeadLetterTopic)(onDeadLetter),
-      ),
-      invocations = List(
-        InvocationRoute[Unit, Dashboard](MethodName("dashboard"))(_ => dashboard()),
-      ),
-    )
+object ResultsApp:
+  def apply()(using
+      DaprCapability,
+      JsonCodec[ScanResult],
+      JsonCodec[ScanRequest],
+      JsonCodec[Dashboard],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprCapability.state(StateStore):
+      // Seed the aggregate once at startup so concurrent updates always have an
+      // ETag to compare-and-swap against (avoids a lost-update race on first write).
+      if StateCapability.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
+        StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
+      DaprApp(
+        subscriptions = List(
+          Subscription[ScanResult](PubSubComponent, ScanCompletedTopic)(onScanCompleted),
+          Subscription[ScanRequest](PubSubComponent, DeadLetterTopic)(onDeadLetter),
+        ),
+        invocations = List(
+          InvocationRoute[Unit, Dashboard](MethodName("dashboard"))(_ => dashboard()),
+        ),
+      )

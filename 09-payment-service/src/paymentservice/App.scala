@@ -20,15 +20,16 @@ def charge(req: ChargeRequest): PaymentResult =
 
 def refund(req: RefundRequest): Unit = ()
 
-def paymentApp()(using
-    JsonCodec[ChargeRequest],
-    JsonCodec[PaymentResult],
-    JsonCodec[RefundRequest],
-    JsonCodec[Unit],
-): DaprApp =
-  DaprApp(invocations =
-    List(
-      InvocationRoute[ChargeRequest, PaymentResult](MethodName("charge"))(charge),
-      InvocationRoute[RefundRequest, Unit](MethodName("refund"))(refund),
-    ),
-  )
+object PaymentApp:
+  def apply()(using
+      JsonCodec[ChargeRequest],
+      JsonCodec[PaymentResult],
+      JsonCodec[RefundRequest],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprApp(invocations =
+      List(
+        InvocationRoute[ChargeRequest, PaymentResult](MethodName("charge"))(charge),
+        InvocationRoute[RefundRequest, Unit](MethodName("refund"))(refund),
+      ),
+    )
