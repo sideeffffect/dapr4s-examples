@@ -150,19 +150,21 @@ def slides: T[PathRef] = Task {
     else if inBlock && line.trim == "```" then
       inBlock = false
       os.write(work / s"diagram-$n.mmd", block.result().mkString("\n"))
-      deck += s"![center](diagram-$n.png)"
+      deck += s"![center](diagram-$n.svg)"
     else if inBlock then block += line
     else deck += line
   os.write(work / "deck.md", deck.result().mkString("\n"))
 
-  // 2. Render every diagram to a high-DPI transparent PNG.
+  // 2. Render every diagram to a crisp vector SVG. SVG stays sharp at any zoom
+  //    in the PDF (no rasterisation blur); Chrome renders the mermaid foreignObject
+  //    labels faithfully when Marp embeds the file.
   for i <- 1 to n do
     Task.log.info(s"rendering diagram-$i")
     os.proc(
       mmdc, "-p", work / "puppeteer.json",
       "-i", work / s"diagram-$i.mmd",
-      "-o", work / s"diagram-$i.png",
-      "-s", "2", "-b", "transparent",
+      "-o", work / s"diagram-$i.svg",
+      "-b", "transparent",
     ).call(cwd = work, stdout = os.Inherit, stderr = os.Inherit)
 
   // 3. Marp -> PDF (allow local files so the PNGs are embedded).

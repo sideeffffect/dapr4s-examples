@@ -80,6 +80,21 @@ Each language/framework solves these *differently and incompletely*.
 
 ---
 
+## The plumbing every call drags along
+
+```mermaid
+flowchart LR
+  C(["Caller"]) --> D["Discover<br/>peer"] --> R["Retry /<br/>timeout"] --> SEC["mTLS /<br/>auth"] --> BL["Business<br/>logic"] --> ST["State"] --> MSG["Publish /<br/>subscribe"]
+  classDef cc fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
+  classDef core fill:#16213e,color:#fff,stroke:#16213e;
+  class D,R,SEC,ST,MSG cc; class BL core;
+```
+
+A sliver of **business logic** (dark) buried in **five red plumbing concerns** —
+re-solved in every service, in every language. Dapr lifts the red boxes out.
+
+---
+
 ## And in the code, effects hide in plain sight
 
 ```scala
@@ -449,11 +464,12 @@ Rather than juggling `given` values, the companion object opens a **scope**
 and threads the capability implicitly via a context function (`?=>`):
 
 ```scala
-def helloStateApp()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-  DaprCapability.state(StoreName("statestore")):
-    StateCapability.save(key, Note("Hello!", 1))   // capability is ambient
-    StateCapability.get[Note](key)
-  // ← StateCapability is GONE here. Touching it is a compile error.
+object HelloStateApp:                              // the pure entry point
+  def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
+    DaprCapability.state(StoreName("statestore")):
+      StateCapability.save(key, Note("Hello!", 1)) // capability is ambient
+      StateCapability.get[Note](key)
+    // ← StateCapability is GONE here. Touching it is a compile error.
 ```
 
 ```scala
@@ -498,7 +514,8 @@ shell and is **passed into the pure core** as a `using` parameter:
 given JsonCodec[Note] = upickleCodec(using upickle.default.macroRW)
 
 // pure core — receives the codec, never derives it
-def helloStateApp()(using DaprCapability, JsonCodec[Note]): HelloStateResult
+object HelloStateApp:
+  def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult
 ```
 
 One small typeclass over upickle — no effect-library dependency, blocking API
@@ -532,18 +549,19 @@ Each is a `pure` + `shell` module pair you can `dapr run`.
 ## 1 · Hello State — the core loop
 
 ```scala
-def helloStateApp()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-  DaprCapability.state(StoreName("statestore")):
-    val key = StateKey("hello-note")
-    StateCapability.save(key, Note("Hello from dapr4s!", 1))
-    val saved = StateCapability.get[Note](key)
+object HelloStateApp:
+  def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
+    DaprCapability.state(StoreName("statestore")):
+      val key = StateKey("hello-note")
+      StateCapability.save(key, Note("Hello from dapr4s!", 1))
+      val saved = StateCapability.get[Note](key)
 
-    val entry = StateCapability.getWithETag[Note](key)         // optimistic
-    val etagConflict = (entry.value, entry.etag) match
-      case (Some(n), Some(etag)) =>
-        StateCapability.saveWithETag(key, n.copy(text = "Updated!"), etag)
-      case _ => None
-    ...
+      val entry = StateCapability.getWithETag[Note](key)       // optimistic
+      val etagConflict = (entry.value, entry.etag) match
+        case (Some(n), Some(etag)) =>
+          StateCapability.saveWithETag(key, n.copy(text = "Updated!"), etag)
+        case _ => None
+      ...
 ```
 
 State CRUD, **ETag-guarded** concurrency, and atomic transactions — all inside
@@ -567,7 +585,7 @@ The pure function returns a **plain data record**. The shell prints it:
 
 ```scala
 Dapr(daprConfigFromEnv()).run:
-  val r = helloStateApp()
+  val r = HelloStateApp()
   println(s"saved: ${r.saved}")
 ```
 
@@ -602,11 +620,12 @@ def onMessage(event: CloudEvent[Message])
   PubSubCapability.publish(Topic("hello-replies"), event.data.copy(from = "subscriber"))
   SubscriptionResult.Success
 
-def subscriberApp()(using DaprCapability, JsonCodec[Message]): DaprApp =
-  DaprCapability.pubsub(PubSubComponent):
-    DaprApp(subscriptions = List(
-      Subscription[Message](PubSubComponent, MessageTopic)(onMessage)
-    ))
+object SubscriberApp:
+  def apply()(using DaprCapability, JsonCodec[Message]): DaprApp =
+    DaprCapability.pubsub(PubSubComponent):
+      DaprApp(subscriptions = List(
+        Subscription[Message](PubSubComponent, MessageTopic)(onMessage)
+      ))
 ```
 
 The handler **captures** `PubSubCapability`; the compiler tracks that capture
@@ -627,12 +646,13 @@ def greet(req: GreetRequest)(using StateCapability, JsonCodec[ServiceStats]): Gr
   StateCapability.save(StatsKey, current.copy(count = current.count + 1))
   GreetResponse(greeting, from = "greeting-service")
 
-def calleeApp()(using DaprCapability, ...): DaprApp =
-  DaprCapability.state(StatStore):
-    DaprApp(invocations = List(
-      InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
-      InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
-    ))
+object CalleeApp:
+  def apply()(using DaprCapability, ...): DaprApp =
+    DaprCapability.state(StatStore):
+      DaprApp(invocations = List(
+        InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
+        InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
+      ))
 ```
 
 `InvocationRoute[In, Out]` ties the wire contract to the handler's *types*.
@@ -642,14 +662,15 @@ def calleeApp()(using DaprCapability, ...): DaprApp =
 ## 4 · Service Invocation — the caller
 
 ```scala
-def callerApp()(using DaprCapability, ...): CallerResult =
-  DaprCapability.invoker:
-    val target = AppId("greeting-service")
-    val greetings = requests.map: req =>
-      ServiceInvocationCapability
-        .invoke[GreetRequest](target, MethodName("greet"), req, HttpMethod.Post)[GreetResponse]
-    val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
-    CallerResult(greetings, s)
+object CallerApp:
+  def apply()(using DaprCapability, ...): CallerResult =
+    DaprCapability.invoker:
+      val target = AppId("greeting-service")
+      val greetings = requests.map: req =>
+        ServiceInvocationCapability
+          .invoke[GreetRequest](target, MethodName("greet"), req, HttpMethod.Post)[GreetResponse]
+      val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
+      CallerResult(greetings, s)
 ```
 
 - Call by **`AppId`**, not host:port — Dapr resolves it, over mTLS
@@ -661,17 +682,18 @@ def callerApp()(using DaprCapability, ...): CallerResult =
 ## 5 · Distributed Lock — exclusivity enforced
 
 ```scala
-def distributedLockApp()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
-  DaprCapability.state(StoreName("statestore")):
-    DaprCapability.lock(StoreName("lockstore")):
-      val resource = LockResourceId("my-resource")
-      for i <- 1 to N do
-        val owner = LockOwner(s"worker-$i")
-        if DistributedLockCapability.tryLock(resource, owner, expirySeconds = 10) then
-          try
-            val v = StateCapability.get[Int](counter).getOrElse(0)
-            StateCapability.save(counter, v + 1)
-          finally DistributedLockCapability.unlock(resource, owner)
+object DistributedLockApp:
+  def apply()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
+    DaprCapability.state(StoreName("statestore")):
+      DaprCapability.lock(StoreName("lockstore")):
+        val resource = LockResourceId("my-resource")
+        for i <- 1 to N do
+          val owner = LockOwner(s"worker-$i")
+          if DistributedLockCapability.tryLock(resource, owner, expirySeconds = 10) then
+            try
+              val v = StateCapability.get[Int](counter).getOrElse(0)
+              StateCapability.save(counter, v + 1)
+            finally DistributedLockCapability.unlock(resource, owner)
 ```
 
 `DistributedLockCapability` is **exclusive** — the compiler forbids handing it
@@ -763,7 +785,7 @@ Failure paths run **compensating activities** — the saga pattern, in types.
 ## 7 · The saga as a state machine
 
 ```mermaid
-flowchart TD
+flowchart LR
   Start([OrderRequest]) --> R{ReserveInventory<br/>reserved?}
   R -- no --> F1[/"out of stock"/]
   R -- yes --> P{ChargePayment<br/>charged?}
@@ -902,6 +924,42 @@ messages the sidecar routes there.
 
 ---
 
+## Five concerns, mapped to building blocks
+
+```mermaid
+flowchart LR
+  subgraph concerns["The concern"]
+    direction TB
+    I["Ingestion"]
+    F["Fan-out"]
+    ID["Idempotency"]
+    RT["Retry"]
+    DL["Dead-letter"]
+  end
+  subgraph dapr["Dapr / dapr4s"]
+    direction TB
+    PUB["publish → topic"]
+    SUB["Subscription on<br/>scan-requested"]
+    STM["state marker<br/>seen-&lt;scanId&gt;"]
+    RES["SubscriptionResult.Retry"]
+    DLT["deadLetterTopic<br/>+ DLQ subscriber"]
+  end
+  I --> PUB
+  F --> SUB
+  ID --> STM
+  RT --> RES
+  DL --> DLT
+  classDef cc fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
+  classDef bb fill:#e6eeff,stroke:#3355aa,color:#1a1a2e;
+  class concerns cc; class dapr bb;
+  class I,F,ID,RT,DL cc; class PUB,SUB,STM,RES,DLT bb;
+```
+
+Every left-hand concern that you'd normally hand-roll becomes a **declared
+building block** — config or one typed value, not bespoke plumbing.
+
+---
+
 ## The gateway — publish on the edge (pure)
 
 ```scala
@@ -909,10 +967,11 @@ def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Su
   PubSubCapability.publish(ScanRequestedTopic, req)
   SubmitResponse(accepted = true, req.scanId)
 
-def gatewayApp()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
-  DaprCapability.pubsub(PubSubComponent):
-    DaprApp(invocations =
-      List(InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit)))
+object GatewayApp:
+  def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
+    DaprCapability.pubsub(PubSubComponent):
+      DaprApp(invocations =
+        List(InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit)))
 ```
 
 A caller `POST`s an image; the gateway publishes it and acks. The seed driver
@@ -955,6 +1014,29 @@ sidecar routes it to `deadLetterTopic`, where the results service tallies it.
 
 ---
 
+## The worker's three answers, as a flow
+
+```mermaid
+flowchart LR
+  E(["scan-requested<br/>event"]) --> SEEN{"seen<br/>marker?"}
+  SEEN -- yes --> DROP[/"Drop — discard"/]
+  SEEN -- no --> POISON{"source =<br/>poison?"}
+  POISON -- yes --> RT1["Retry → exhausts policy"] --> DLQ[("deadLetterTopic")]
+  POISON -- no --> FLAKY{"flaky &amp;<br/>first try?"}
+  FLAKY -- yes --> RT2[/"Retry — inline redelivery"/]
+  FLAKY -- no --> WORK["publish scan-completed<br/>+ save seen marker"] --> OK[/"Success — ack"/]
+  classDef ev fill:#e6eeff,stroke:#3355aa,color:#1a1a2e;
+  classDef bad fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
+  classDef ok fill:#d6f5d6,stroke:#2e7d32,color:#1a1a2e;
+  classDef infra fill:#fff3d6,stroke:#c98a00,color:#1a1a2e;
+  class E ev; class DROP,RT1,RT2 bad; class WORK,OK ok; class DLQ infra;
+```
+
+`Drop` · `Retry` · `Success` are the **only** three answers — the return type
+makes the at-least-once contract impossible to get wrong by accident.
+
+---
+
 <!-- _class: section-break -->
 
 # Case study 2
@@ -970,7 +1052,7 @@ orchestration; each activity makes one **service-invocation** call downstream.
 
 ```mermaid
 flowchart LR
-  subgraph order["order-service (shell)"]
+  subgraph order["order-service (pure)"]
     WF["OrderProcessingWorkflow<br/>saga + compensation"]
   end
   WF -- "reserve / release" --> INV["inventory-service"]
@@ -992,7 +1074,7 @@ each owns its own copy of the contract.
 ## The saga as a state machine
 
 ```mermaid
-flowchart TD
+flowchart LR
   Start([OrderRequest]) --> R{Reserve<br/>reserved?}
   R -- no --> F1[/"out of stock"/]
   R -- yes --> P{Charge<br/>charged?}
@@ -1098,6 +1180,37 @@ Before, these were code-review comments. Now they're **compile errors**:
 
 ---
 
+## A wall of compile errors
+
+```mermaid
+flowchart LR
+  subgraph illegal["Illegal programs"]
+    direction TB
+    A["use client after scope closes"]
+    B["capability escapes to a thread"]
+    C["await Task outside the run"]
+    D["Topic used as a StoreName"]
+    E2["hidden I/O in 'pure' logic"]
+  end
+  WALL{{"capture checking<br/>+ safe mode"}}
+  CE[/"compile error"/]
+  A --> WALL
+  B --> WALL
+  C --> WALL
+  D --> WALL
+  E2 --> WALL
+  WALL --> CE
+  classDef bad fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
+  classDef wall fill:#16213e,color:#fff,stroke:#16213e;
+  classDef ce fill:#ffe0b3,stroke:#c98a00,color:#1a1a2e;
+  class illegal bad; class A,B,C,D,E2 bad; class WALL wall; class CE ce;
+```
+
+The five classic distributed-systems mistakes all hit the same wall — and bounce
+off as a red squiggle in your editor, not a 3 a.m. page.
+
+---
+
 ## Where dapr4s sits vs. effect libraries
 
 | | Approach | Effects in types |
@@ -1110,6 +1223,33 @@ Before, these were code-review comments. Now they're **compile errors**:
 dapr4s is **direct style**: ordinary code, ordinary control flow, no `for`-comprehension
 monad tax — but the *capabilities* are tracked. No effect-runtime dependency;
 blocking calls under the hood, ready for **JVM virtual threads**.
+
+---
+
+## Two roads to "effects in types"
+
+```mermaid
+flowchart LR
+  subgraph monadic["Wrap the value"]
+    direction TB
+    CE["Cats Effect · ZIO<br/>IO[A] · ZIO[R,E,A]"]
+    KYO["Kyo<br/>A &lt; S (pending set)"]
+  end
+  subgraph direct["Direct style + capture checking"]
+    direction TB
+    OX["Ox<br/>structured concurrency"]
+    D4S["dapr4s<br/>capabilities via ^ captures"]
+  end
+  monadic --> ET(["Effects visible<br/>in the types"])
+  direct --> ET
+  classDef m fill:#d7e8ff,stroke:#16213e,color:#1a1a2e;
+  classDef d fill:#ffe9c2,stroke:#c98a00,color:#1a1a2e;
+  classDef et fill:#d6f5d6,stroke:#2e7d32,color:#1a1a2e;
+  class monadic m; class CE,KYO m; class direct d; class OX,D4S d; class ET et;
+```
+
+Same destination, different ergonomics. dapr4s takes the **direct-style** road —
+plain control flow, effects tracked by `^` captures instead of a monad.
 
 ---
 

@@ -29,7 +29,7 @@ APIs, but without any safe-mode restrictions.
 ### What this looks like in practice
 
 ```scala
-DaprRuntime.run(DaprRuntimeConfig()):              // DaprCapability in scope
+Dapr(config).run:                                  // DaprCapability in scope
   DaprCapability.state(StoreName("statestore")):   // StateCapability^{cap} in scope
     StateCapability.save(key, value)               // OK — inside the scope
 
@@ -45,9 +45,11 @@ Code that crosses the Java boundary (upickle macro derivations, Dapr SDK interna
 be checked by the Scala 3 capture checker. The `@scala.caps.assumeSafe` annotation says
 *"I assert this is safe at this boundary — trust me."*
 
-In these examples, `@assumeSafe` appears in exactly one place per shell module:
-- `given upickle.default.ReadWriter[T] = upickle.default.macroRW` — upickle is not
-  capture-aware, but reading/writing JSON is a pure operation.
+In these examples, `@assumeSafe` guards only the upickle JSON-codec derivations in the
+shell modules — upickle is not capture-aware, but reading/writing JSON is a pure
+operation. Simple examples put it on the single `given` derivation; the multi-service
+case studies (08, 09) put it on an `@scala.caps.assumeSafe object Codecs` that holds all
+the `JsonCodec[T]` givens for that service.
 
 ---
 
@@ -57,8 +59,18 @@ Each example is split into two Mill modules:
 
 | Module | Compiled with | Purpose |
 |---|---|---|
-| `<name>` | `-language:experimental.safe` | Pure business logic. No I/O. Returns structured result types. |
-| `<name>-shell` | `-experimental` | Impure entry point. Derives codecs, starts `DaprRuntime`, prints results. |
+| `<name>` | `-language:experimental.safe` | Capture-checked "safe" code. Domain model, capability-scoped business logic, activities, workflows, even `ServerApp` / handlers — anything that can satisfy capture checking. Capabilities are received per call and used within that call, never stored in a field. |
+| `<name>-shell` | `-experimental` | The trusted core that safe mode genuinely rejects: the `@scala.caps.assumeSafe` upickle JSON-codec derivations and the `@main` entry points (which do console I/O and construct/run `Dapr(config)`). |
+
+The split is *not* "pure = no I/O, shell = entry point". A pure module routinely hosts
+the server app and its request/workflow handlers: because each capability (e.g.
+`DaprCapability`, `ServiceInvocationCapability`) is passed into a call and used only
+within it — never captured in a field — capture checking is satisfied without
+`@assumeSafe`. Example 09 (`09-order-service`) demonstrates this: its saga workflow, all
+five activities, and `ServerApp` live in the *pure* module; only `object Codecs`
+(`@assumeSafe`) and the `@main` entries live in `09-order-service-shell`. The library
+entry point is `class Dapr` (`Dapr(config).run { ... }` / `Dapr(config).serve { ... }`),
+which is the one impure thing the `@main`s do.
 
 Source files live under `src/<package>/` within each module directory, e.g.:
 ```
@@ -192,6 +204,82 @@ dapr run --app-id workflow-driver \
          -- mill 07-workflows-shell.runMain workflows.workflowDriver
 ```
 
+### 08 — scan-pipeline
+
+Real-world case study: a Grafana-style, event-driven vulnerability scanner built as a
+fan-out pub/sub pipeline across three services (each with its own `-shell`):
+
+- **scan-gateway** — accepts submissions and publishes to the `scan-requested` topic
+  (`scanGateway` server; `scanSeed` is a one-shot publisher).
+- **scan-worker** — subscribes to `scan-requested`, runs the (stubbed) scan, and publishes
+  to `scan-completed`. A request that keeps failing past the sidecar's retry policy is
+  routed to the real dead-letter topic (`scan-dead-letter`).
+- **scan-results** — subscribes to `scan-completed` (folding results into a running
+  dashboard) and to the dead-letter topic `scan-dead-letter` (counting failed requests).
+
+```
+# Terminal 1 — results dashboard
+dapr run --app-id scan-results \
+         --app-port 8090 \
+         --components-path ./components \
+         -- mill 08-scan-results-shell.runMain scanresults.scanResults
+
+# Terminal 2 — worker
+dapr run --app-id scan-worker \
+         --app-port 8089 \
+         --components-path ./components \
+         -- mill 08-scan-worker-shell.runMain scanworker.scanWorker
+
+# Terminal 3 — gateway (HTTP server)
+dapr run --app-id scan-gateway \
+         --app-port 8088 \
+         --components-path ./components \
+         -- mill 08-scan-gateway-shell.runMain scangateway.scanGateway
+
+# Terminal 4 — seed a batch of scan requests
+dapr run --app-id scan-gateway \
+         --components-path ./components \
+         -- mill 08-scan-gateway-shell.runMain scangateway.scanSeed
+```
+
+### 09 — order-fulfillment
+
+Real-world case study: a ZEISS-style order-fulfillment **saga** orchestrated by a durable
+workflow across four services (each with its own `-shell`):
+
+- **order-service** — runs `OrderProcessingWorkflow`, which calls the downstream services
+  in sequence (reserve → charge → dispatch) and compensates on failure (release / refund).
+  Hosts a `submit-order` invocation route. `orderServer` is the workflow/server app;
+  `orderDriver` submits the sample orders and prints outcomes.
+- **inventory-service** — `reserve` / `release` (`inventoryServer`).
+- **payment-service** — `charge` / `refund` (`paymentServer`).
+- **shipping-service** — `dispatch` (`shippingServer`).
+
+```
+# Terminals 1–3 — downstream services
+dapr run --app-id inventory-service --app-port 8092 \
+         --components-path ./components \
+         -- mill 09-inventory-service-shell.runMain inventoryservice.inventoryServer
+
+dapr run --app-id payment-service --app-port 8093 \
+         --components-path ./components \
+         -- mill 09-payment-service-shell.runMain paymentservice.paymentServer
+
+dapr run --app-id shipping-service --app-port 8094 \
+         --components-path ./components \
+         -- mill 09-shipping-service-shell.runMain shippingservice.shippingServer
+
+# Terminal 4 — order-service (workflow + submit-order route)
+dapr run --app-id order-service --app-port 8091 \
+         --components-path ./components \
+         -- mill 09-order-service-shell.runMain orderservice.orderServer
+
+# Terminal 5 — driver (submits the sample orders)
+dapr run --app-id order-service \
+         --components-path ./components \
+         -- mill 09-order-service-shell.runMain orderservice.orderDriver
+```
+
 ---
 
 ## Example progression
@@ -205,6 +293,8 @@ dapr run --app-id workflow-driver \
 | 5 | `05-distributed-lock/` | `05-distributed-lock-shell/` | Distributed lock | Lock capability ensures try/unlock pairing |
 | 6 | `06-actors/` | `06-actors-shell/` | Virtual actors, timers, reminders | `ActorContext` is a per-invocation capability; actor state is isolated |
 | 7 | `07-workflows/` | `07-workflows-shell/` | Durable workflows, saga, compensation | `WorkflowContext` enables deterministic replay; activity results are `Task[O]` |
+| 8 | `08-scan-gateway/`, `08-scan-worker/`, `08-scan-results/` | matching `-shell/` modules | Grafana-style fan-out pub/sub pipeline with a real dead-letter queue | Three services; subscribers' `PubSubCapability` threaded into handlers; dead-letter topic counted in the dashboard |
+| 9 | `09-order-service/`, `09-inventory-service/`, `09-payment-service/`, `09-shipping-service/` | matching `-shell/` modules | ZEISS-style order-fulfillment saga (durable workflow + service invocation + compensation) | Saga workflow, all activities, and `ServerApp` are pure: `execute` receives `DaprCapability` per call, so no capability is captured in a field |
 
 ---
 
@@ -215,6 +305,39 @@ mill __.compile                                           # compile everything
 mill 01-hello-state-shell.run                           # run a single-main shell
 mill 06-actors-shell.runMain actors.actorApp            # run a named main in a multi-main shell
 ```
+
+## Testing (e2e)
+
+The `e2e` Mill module (`object e2e extends BaseModule with TestModule.Munit` in
+`build.mill`) holds ~9 munit suites that exercise the examples end-to-end against real
+Dapr infrastructure spun up via Docker Compose + Testcontainers (no `dapr` CLI needed on
+the host). Each suite — `HelloStateTest`, `SecretsConfigTest`, `HelloPubSubTest`,
+`ServiceInvocationTest`, `DistributedLockTest`, `ActorsTest`, `WorkflowsTest`,
+`ScanPipelineTest`, `OrderFulfillmentTest` — receives the relevant shell's assembly JAR
+via `-De2e.jar.<name>=…` system properties (see `forkArgs`).
+
+Run the full suite (assemblies first, then the forked tests):
+```
+./mill __.assembly        # build every shell's assembly JAR
+./mill e2e.testForked     # run the e2e suites (Docker required)
+```
+
+This is exactly what CI runs (`.github/workflows/e2e.yml`, job `e2e`).
+
+## Slides
+
+`SLIDES.md` is the presentation deck. The `slides` Mill target renders it to PDF: it
+pre-renders each ```` ```mermaid ```` block to a PNG with the Mermaid CLI (`mmdc`) and
+then runs Marp (`npx @marp-team/marp-cli`) to produce the PDF at
+`out/slides.dest/SLIDES.pdf`.
+
+```
+./mill slides             # build the PDF -> out/slides.dest/SLIDES.pdf
+./mill show slides        # same, also prints the PDF path as JSON
+```
+
+Requires `mmdc`, `npx`, and a Chromium/Chrome on PATH (override with `CHROME_PATH`). CI
+also renders the deck (`.github/workflows/e2e.yml`, job `slides`).
 
 ## Code conventions
 
