@@ -4,12 +4,15 @@ import dapr4s.*
 import scala.concurrent.duration.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
-// The saga lives here, not in the pure module: each activity captures the
-// ServiceInvocationCapability so it can call a downstream service, and the
-// workflow/activity instances are stored in DaprApp.  Capturing a capability in
-// a long-lived object is exactly what safe mode forbids, so this orchestration
-// is written in the shell (compiled with -experimental, like the dapr4s library
-// itself) using the @assumeSafe escape hatch.
+// Only the parts that safe mode genuinely rejects live here: each activity
+// captures the ServiceInvocationCapability so it can call a downstream service
+// (WorkflowActivity.execute takes no capability argument, so the target must be
+// held in the instance), and the workflow + serverApp reference those capturing
+// activity types.  Capturing a capability in a long-lived object is exactly what
+// safe mode forbids, so these are written in the shell (compiled with
+// -experimental, like the dapr4s library itself) using the @assumeSafe escape
+// hatch.  The domain model and the workflow-client logic (processOrder /
+// driverApp) are pure and live in the non-shell module — see App.scala.
 // ─────────────────────────────────────────────────────────────────────────────
 
 private def upickleCodec[T: upickle.default.ReadWriter]: JsonCodec[T] = new JsonCodec[T]:
@@ -110,19 +113,6 @@ class OrderProcessingWorkflow extends Workflow:
           WorkflowContext.complete(OrderResult(false, "dispatch failed"))
         else WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
-// ── Client helpers (start a workflow and await the outcome) ───────────────────
-
-def processOrder(order: OrderRequest, timeout: FiniteDuration)(using WorkflowCapability): ProcessOrderResult =
-  val id = WorkflowCapability.start(OrderWorkflowName, order)
-  WorkflowCapability.waitForCompletion(id, timeout) match
-    case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
-    case Some(snap) =>
-      ProcessOrderResult(
-        order.orderId,
-        timedOut = false,
-        result = snap.serializedOutput.flatMap(_.decode[OrderResult].toOption),
-      )
-
 // ── Apps ──────────────────────────────────────────────────────────────────────
 
 def serverApp(timeout: FiniteDuration)(using DaprCapability): DaprApp =
@@ -142,10 +132,6 @@ def serverApp(timeout: FiniteDuration)(using DaprCapability): DaprApp =
             processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out")),
         ),
       )
-
-def driverApp(timeout: FiniteDuration)(using DaprCapability): List[ProcessOrderResult] =
-  DaprCapability.workflow:
-    sampleOrders.map(processOrder(_, timeout))
 
 private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
   val appPort = sys.env.getOrElse("APP_PORT", defaultAppPort.toString).toInt
