@@ -13,7 +13,8 @@ case class ProcessOrderResult(orderId: String, timedOut: Boolean, result: Option
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // WorkflowContext is a per-run ExclusiveCapability: Task[O] values from
 // callActivity cannot be awaited outside the workflow run method.
-// Activities are pure computations — no I/O; they return typed values.
+// Activities receive a DaprCapability on every call (so they *may* do Dapr I/O),
+// but these are pure computations that ignore it and return typed values.
 // WorkflowActivity[I,O] requires JsonCodec[I] at construction; all codecs are
 // captured as class members and are in scope wherever needed.
 // Duration constants are passed from the shell so this module is clock-free.
@@ -23,26 +24,26 @@ case class ProcessOrderResult(orderId: String, timedOut: Boolean, result: Option
 
 class ReserveInventory(using JsonCodec[OrderRequest], JsonCodec[ReservationResult])
     extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(req: OrderRequest): ReservationResult =
+  def execute(req: OrderRequest)(using DaprCapability): ReservationResult =
     val ok = req.quantity <= 5
     ReservationResult(ok, if ok then s"RES-${req.orderId}" else "")
 
 class CancelReservation(using JsonCodec[ReservationResult], JsonCodec[Unit])
     extends WorkflowActivity[ReservationResult, Unit]:
-  def execute(res: ReservationResult): Unit = ()
+  def execute(res: ReservationResult)(using DaprCapability): Unit = ()
 
 class ChargePayment(using JsonCodec[OrderRequest], JsonCodec[PaymentResult])
     extends WorkflowActivity[OrderRequest, PaymentResult]:
-  def execute(req: OrderRequest): PaymentResult =
+  def execute(req: OrderRequest)(using DaprCapability): PaymentResult =
     val ok = req.budget >= 10.0
     PaymentResult(ok, if ok then s"TXN-${req.orderId}" else "")
 
 class RefundPayment(using JsonCodec[PaymentResult], JsonCodec[Unit]) extends WorkflowActivity[PaymentResult, Unit]:
-  def execute(payment: PaymentResult): Unit = ()
+  def execute(payment: PaymentResult)(using DaprCapability): Unit = ()
 
 class DispatchShipment(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult])
     extends WorkflowActivity[OrderRequest, ShipmentResult]:
-  def execute(req: OrderRequest): ShipmentResult =
+  def execute(req: OrderRequest)(using DaprCapability): ShipmentResult =
     ShipmentResult(dispatched = true, trackingId = s"TRK-${req.orderId}")
 
 // ── Workflow (saga) ───────────────────────────────────────────────────────────
