@@ -787,8 +787,8 @@ nested `if/else` in `run` *is* this diagram. Durable replay survives crashes.
 ```scala
 class ReserveInventory(using JsonCodec[OrderRequest], JsonCodec[ReservationResult])
     extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(req: OrderRequest): ReservationResult =
-    ReservationResult(req.quantity <= 5, s"RES-${req.orderId}")   // pure!
+  def execute(req: OrderRequest)(using DaprCapability): ReservationResult =
+    ReservationResult(req.quantity <= 5, s"RES-${req.orderId}")   // no field capture!
 ```
 
 ```scala
@@ -847,7 +847,7 @@ Dapr's own adopter list includes both. They stress **different** halves of the m
 | Core block | **pub/sub** + state | **workflow** + service invocation |
 | Hard part | at-least-once, dedup, **DLQ** | **compensation** across services |
 | Services | 3 (gateway · worker · results) | 4 (order · inventory · payment · shipping) |
-| Lives in | mostly **pure** handlers | saga in the **shell** (captures + stores caps) |
+| Lives in | mostly **pure** handlers | **pure** saga (per-call capability) |
 
 Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
 
@@ -1012,30 +1012,32 @@ the compensations still run.
 
 ---
 
-## Why this saga lives in the *shell*
+## Why this whole saga stays *pure*
 
-Each activity must **capture** the `ServiceInvocationCapability` and then be
-**stored** in a `List[WorkflowActivity]` inside `DaprApp` — a long-lived object.
-Capturing a capability into long-lived storage is exactly what **safe mode
-forbids**, so the orchestration is written in the shell with `@assumeSafe`:
+`WorkflowActivity.execute` receives a `DaprCapability` **per call** — the runtime
+hands it in for the duration of the invocation. Nothing is captured into a field,
+nothing is **stored** in the long-lived `List[WorkflowActivity]`, so **safe mode
+accepts the activities as-is** — no `@assumeSafe`:
 
 ```scala
-@scala.caps.assumeSafe
-class ReserveActivity(using ServiceInvocationCapability)
+class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult],
+                            JsonCodec[ReserveRequest])
     extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(o: OrderRequest): ReservationResult =
-    ServiceInvocationCapability.invoke[ReserveRequest](
-      InventoryService, MethodName("reserve"),
-      ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
+  def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
+    DaprCapability.invoker:
+      ServiceInvocationCapability.invoke[ReserveRequest](
+        InventoryService, MethodName("reserve"),
+        ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
 ```
 
-The **pure** `09-order-service` module keeps only the safe domain model — the
-DTOs, the `AppId` constants, the sample orders. The boundary is the same
-pure/shell split every example follows; the saga just sits on the impure side.
+The **pure** `09-order-service` module holds the entire saga — DTOs, activities,
+the orchestration, and the workflow-client driver. The **shell** keeps only what
+safe mode genuinely rejects: the upickle codec derivations and the `@main` entry
+points.
 
 ---
 
-## The orchestration & its compensations (shell)
+## The orchestration & its compensations (pure)
 
 ```scala
 class OrderProcessingWorkflow extends Workflow:
@@ -1064,10 +1066,11 @@ outside, keeping replay deterministic.
 - The **pure handler** is the common case: Grafana's whole pipeline is pure logic
   over capabilities; the broker and retry policy stay in config, the dead-letter
   topic is one field on the `Subscription`.
-- The **shell** absorbs exactly what safe mode rejects — here, a saga whose
-  activities capture a capability and live in long-lived storage.
-- The **pure/shell boundary is principled**, not arbitrary: code touches the
-  network at every step ⇒ shell; code is a domain model ⇒ pure.
+- The **shell** absorbs exactly what safe mode rejects — here, just the upickle
+  codec derivations and the `@main` entry points.
+- The **pure/shell boundary is principled**, not arbitrary: even a saga that hits
+  the network at every step stays pure, because `execute` takes its
+  `DaprCapability` per call instead of capturing one.
 
 > Same compiler guarantees, real production shapes.
 
