@@ -1,6 +1,6 @@
 package e2e
 
-class SecretsConfigTest extends E2ESuite:
+class Example02SecretsConfigTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(30, "s")
 

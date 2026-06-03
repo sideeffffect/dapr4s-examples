@@ -1,6 +1,6 @@
 package e2e
 
-class ServiceInvocationTest extends E2ESuite:
+class Example04ServiceInvocationTest extends E2ESuite:
 
   val infra = ServerInfra(
     appId = "e2e-callee",

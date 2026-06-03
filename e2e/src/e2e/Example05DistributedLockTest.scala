@@ -1,6 +1,6 @@
 package e2e
 
-class DistributedLockTest extends E2ESuite:
+class Example05DistributedLockTest extends E2ESuite:
 
   val infra = OneShotInfra("e2e-dist-lock")
   override def munitFixtures = List(infra)

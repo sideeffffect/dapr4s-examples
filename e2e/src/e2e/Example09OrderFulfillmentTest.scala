@@ -9,7 +9,7 @@ package e2e
   *
   * Each test uses a distinct SKU so inventory stock (persisted in Redis, DefaultStock=10) does not leak between cases.
   */
-class OrderFulfillmentTest extends E2ESuite:
+class Example09OrderFulfillmentTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(120, "s")
 
   val infra = MultiServerInfra(

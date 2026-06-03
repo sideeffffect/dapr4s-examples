@@ -1,6 +1,6 @@
 package e2e
 
-class HelloStateTest extends E2ESuite:
+class Example01HelloStateTest extends E2ESuite:
 
   val infra = OneShotInfra("e2e-hello-state")
   override def munitFixtures = List(infra)

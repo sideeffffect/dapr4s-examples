@@ -1,6 +1,6 @@
 package e2e
 
-class HelloPubSubTest extends E2ESuite:
+class Example03HelloPubSubTest extends E2ESuite:
 
   val infra = ServerInfra(
     appId = "e2e-pubsub-sub",

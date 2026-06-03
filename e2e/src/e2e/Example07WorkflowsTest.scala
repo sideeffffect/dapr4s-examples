@@ -1,6 +1,6 @@
 package e2e
 
-class WorkflowsTest extends E2ESuite:
+class Example07WorkflowsTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 
   val infra = ServerInfra(

@@ -311,9 +311,10 @@ mill 06-actors-shell.runMain actors.actorApp            # run a named main in a 
 The `e2e` Mill module (`object e2e extends BaseModule with TestModule.Munit` in
 `build.mill`) holds ~9 munit suites that exercise the examples end-to-end against real
 Dapr infrastructure spun up via Docker Compose + Testcontainers (no `dapr` CLI needed on
-the host). Each suite — `HelloStateTest`, `SecretsConfigTest`, `HelloPubSubTest`,
-`ServiceInvocationTest`, `DistributedLockTest`, `ActorsTest`, `WorkflowsTest`,
-`ScanPipelineTest`, `OrderFulfillmentTest` — receives the relevant shell's assembly JAR
+the host). Each suite — `Example01HelloStateTest`, `Example02SecretsConfigTest`,
+`Example03HelloPubSubTest`, `Example04ServiceInvocationTest`, `Example05DistributedLockTest`,
+`Example06ActorsTest`, `Example07WorkflowsTest`, `Example08ScanPipelineTest`,
+`Example09OrderFulfillmentTest` — receives the relevant shell's assembly JAR
 via `-De2e.jar.<name>=…` system properties (see `forkArgs`).
 
 Run the full suite (assemblies first, then the forked tests):
