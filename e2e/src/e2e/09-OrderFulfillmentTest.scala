@@ -13,7 +13,7 @@ class OrderFulfillmentTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(120, "s")
 
   val infra = MultiServerInfra(
-    composeFileName = "docker-compose.order.yml",
+    composeFileName = "docker-compose.09-order.yml",
     jars = Map(
       "JAR_ORDER" -> "order-service",
       "JAR_INVENTORY" -> "inventory-service",

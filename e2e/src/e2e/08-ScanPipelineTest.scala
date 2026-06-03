@@ -14,7 +14,7 @@ class ScanPipelineTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(180, "s")
 
   val infra = MultiServerInfra(
-    composeFileName = "docker-compose.scan.yml",
+    composeFileName = "docker-compose.08-scan.yml",
     jars = Map(
       "JAR_GATEWAY" -> "scan-gateway",
       "JAR_WORKER" -> "scan-worker",
