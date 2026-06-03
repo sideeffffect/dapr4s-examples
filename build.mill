@@ -16,7 +16,7 @@ object nightliesJvmWorker extends JvmWorkerModule:
   }
 
 val ScalaVersion = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
-val Dapr4sVersion = "0.1.0"
+val Dapr4sVersion = "0.2.0"
 
 trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
@@ -55,6 +55,11 @@ object `09-order-service` extends PureModule
 object `09-inventory-service` extends PureModule
 object `09-payment-service` extends PureModule
 object `09-shipping-service` extends PureModule
+
+// Remaining building blocks: cryptography, jobs, conversation (LLM).
+object `10-cryptography` extends PureModule
+object `11-jobs` extends PureModule
+object `12-conversation` extends PureModule
 
 // Services files from multiple JARs must be merged (not last-wins) so that
 // gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)
@@ -95,6 +100,12 @@ object `09-payment-service-shell` extends ShellModule:
   override def moduleDeps = Seq(`09-payment-service`)
 object `09-shipping-service-shell` extends ShellModule:
   override def moduleDeps = Seq(`09-shipping-service`)
+object `10-cryptography-shell` extends ShellModule:
+  override def moduleDeps = Seq(`10-cryptography`)
+object `11-jobs-shell` extends ShellModule:
+  override def moduleDeps = Seq(`11-jobs`)
+object `12-conversation-shell` extends ShellModule:
+  override def moduleDeps = Seq(`12-conversation`)
 
 // ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
 // Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
@@ -219,5 +230,8 @@ object e2e extends BaseModule with TestModule.Munit:
       s"-De2e.jar.inventory-service=${`09-inventory-service-shell`.assembly().path}",
       s"-De2e.jar.payment-service=${`09-payment-service-shell`.assembly().path}",
       s"-De2e.jar.shipping-service=${`09-shipping-service-shell`.assembly().path}",
+      s"-De2e.jar.cryptography=${`10-cryptography-shell`.assembly().path}",
+      s"-De2e.jar.jobs=${`11-jobs-shell`.assembly().path}",
+      s"-De2e.jar.conversation=${`12-conversation-shell`.assembly().path}",
     )
   }

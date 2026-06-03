@@ -1,0 +1,52 @@
+# Infrastructure for the cryptography one-shot E2E test.
+# Identical to docker-compose.oneshot.yml but additionally bind-mounts a keys
+# directory at /keys, which the crypto.dapr.localstorage component reads its
+# RSA key from. The key is generated at test time and its path passed via
+# CRYPTO_KEYS_PATH. The crypto component YAML is injected into COMPONENTS_PATH
+# by the test fixture (it is not in the shared components/ dir, since other
+# examples don't mount /keys).
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  dapr:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./daprd"
+      - "-app-id=${APP_ID}"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+      - type: bind
+        source: ${CRYPTO_KEYS_PATH}
+        target: /keys
+        read_only: true
+    ports:
+      - "3500"
+      - "50001"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+networks:
+  dapr-net:

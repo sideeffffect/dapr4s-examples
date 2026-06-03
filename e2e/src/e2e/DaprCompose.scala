@@ -36,6 +36,14 @@ private val DaprReadyPattern = ".*dapr initialized. Status: Running.*\\n"
 final class OneShotInfra(
     appId: String,
     sidecarEnv: Map[String, String] = Map.empty,
+    composeFileName: String = "docker-compose.oneshot.yml",
+    // Extra component YAMLs (filename -> content) dropped into the prepared
+    // components dir for this fixture only — used by examples whose component
+    // can't live in the shared components/ dir (e.g. crypto, which needs /keys).
+    extraComponents: Map[String, String] = Map.empty,
+    // Extra compose env vars, evaluated in beforeAll so the test can generate
+    // resources lazily (e.g. a temp keys dir for CRYPTO_KEYS_PATH).
+    extraEnv: () => Map[String, String] = () => Map.empty,
 ) extends Fixture[Nothing](appId):
 
   private var compose: Option[ComposeContainer] = None
@@ -73,11 +81,14 @@ final class OneShotInfra(
       .text()
 
   override def beforeAll(): Unit =
-    val c = ComposeContainer(composeFile("docker-compose.oneshot.yml"))
+    val c = ComposeContainer(composeFile(composeFileName))
     c.withLocalCompose(true)
     c.withEnv("APP_ID", appId)
-    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
+    val compDir = prepareComponents()
+    extraComponents.foreach((name, content) => os.write(compDir / name, content))
+    c.withEnv("COMPONENTS_PATH", compDir.toString)
     sidecarEnv.foreach((k, v) => c.withEnv(k, v))
+    extraEnv().foreach((k, v) => c.withEnv(k, v))
     c.withExposedService("dapr", 3500)
     c.withExposedService("dapr", 50001)
     c.waitingFor(

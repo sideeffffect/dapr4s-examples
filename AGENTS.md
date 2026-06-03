@@ -295,6 +295,9 @@ dapr run --app-id order-service \
 | 7 | `07-workflows/` | `07-workflows-shell/` | Durable workflows, saga, compensation | `WorkflowContext` enables deterministic replay; activity results are `Task[O]` |
 | 8 | `08-scan-gateway/`, `08-scan-worker/`, `08-scan-results/` | matching `-shell/` modules | Grafana-style fan-out pub/sub pipeline with a real dead-letter queue | Three services; subscribers' `PubSubCapability` threaded into handlers; dead-letter topic counted in the dashboard |
 | 9 | `09-order-service/`, `09-inventory-service/`, `09-payment-service/`, `09-shipping-service/` | matching `-shell/` modules | ZEISS-style order-fulfillment saga (durable workflow + service invocation + compensation) | Saga workflow, all activities, and `ServerApp` are pure: `execute` receives `DaprCapability` per call, so no capability is captured in a field |
+| 10 | `10-cryptography/` | `10-cryptography-shell/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability` over immutable `ArraySeq[Byte]`; one-shot client |
+| 11 | `11-jobs/` | `11-jobs-shell/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability` (client) + `JobRoute` (trigger); handler persists payload to state |
+| 12 | `12-conversation/` | `12-conversation-shell/` | LLM conversation (alpha1 `converse` + alpha2 `chat`) | `ConversationCapability` against the `conversation.echo` component |
 
 ---
 
@@ -314,7 +317,8 @@ Dapr infrastructure spun up via Docker Compose + Testcontainers (no `dapr` CLI n
 the host). Each suite — `Example01HelloStateTest`, `Example02SecretsConfigTest`,
 `Example03HelloPubSubTest`, `Example04ServiceInvocationTest`, `Example05DistributedLockTest`,
 `Example06ActorsTest`, `Example07WorkflowsTest`, `Example08ScanPipelineTest`,
-`Example09OrderFulfillmentTest` — receives the relevant shell's assembly JAR
+`Example09OrderFulfillmentTest`, `Example10CryptographyTest`, `Example11JobsTest`,
+`Example12ConversationTest` — receives the relevant shell's assembly JAR
 via `-De2e.jar.<name>=…` system properties (see `forkArgs`).
 
 Run the full suite (assemblies first, then the forked tests):
