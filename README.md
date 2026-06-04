@@ -31,7 +31,7 @@ Every example is two modules:
 | 09 | Order-fulfillment saga across inventory / payment / shipping services |
 | 10 | Cryptography (encrypt / decrypt via crypto.dapr.localstorage) |
 | 11 | Jobs (schedule a job; the sidecar fires it back to a JobRoute) |
-| 12 | Conversation / LLM (alpha1 converse + alpha2 chat, echo component) |
+| 12 | Conversation / LLM (alpha1 converse + alpha2 converseAlpha2, echo component) |
 
 ## Build & test
 

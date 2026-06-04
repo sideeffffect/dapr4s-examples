@@ -50,7 +50,7 @@ style: |
 2. **Dapr** — the sidecar that absorbs the hard parts
 3. **Safe Scala** — capture checking, capabilities, safe mode
 4. **dapr4s** — design: pure core + impure shell
-5. **Seven worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows
+5. **Ten worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows, cryptography, jobs, conversation
    - plus **two real-world case studies** — Grafana scan pipeline, ZEISS order saga
 6. **The payoff** — what the compiler now guarantees
 7. **Trade-offs, status, and where this goes next
@@ -195,9 +195,12 @@ mTLS, tracing, and the actual backend. Swap the backend, keep the code.
 | Secrets | `/v1.0/secrets` | Stable |
 | Configuration | `/v1.0/configuration` | Stable |
 | Distributed Lock | `/v1.0-alpha1/lock` | Alpha |
-| Bindings, Crypto, Jobs, Conversation | … | mixed |
+| Bindings | `/v1.0/bindings` | Stable |
+| Cryptography | `/v1.0-alpha1/crypto` | Alpha |
+| Jobs | `/v1.0-alpha1/jobs` | Alpha |
+| Conversation | `/v1.0-alpha2/conversation` | Alpha |
 
-**dapr4s wraps the first eight as type-safe Scala capabilities.**
+**dapr4s wraps all twelve as type-safe Scala capabilities.**
 
 ---
 
@@ -526,7 +529,7 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 <!-- _class: section-break -->
 
 # Part 5
-## Seven worked examples
+## Ten worked examples
 
 ---
 
@@ -541,8 +544,13 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 | 5 | Distributed lock | exclusive capability ⇒ try/unlock pairing |
 | 6 | Virtual actors | per-invocation `ActorContext` |
 | 7 | Durable workflows | `Task[O]` can't be awaited outside the run |
+| 10 | Cryptography | encrypt/decrypt scoped to a `CryptoCapability` |
+| 11 | Jobs | schedule client + `JobRoute` handler, two halves |
+| 12 | Conversation | alpha1 + alpha2 on one capability |
 
-Each is a `pure` + `shell` module pair you can `dapr run`.
+Each is a `pure` + `shell` module pair you can `dapr run`. Examples **8** and
+**9** are the two real-world case studies later in the deck (Grafana scan
+pipeline, ZEISS order saga).
 
 ---
 
@@ -683,13 +691,14 @@ object CallerApp:
 
 ```scala
 object DistributedLockApp:
-  def apply()(using DaprCapability, JsonCodec[Int]): LockDemoResult =
+  def apply(lockExpiry: FiniteDuration, shortExpiry: FiniteDuration)  // built in the shell
+           (using DaprCapability, JsonCodec[Int]): LockDemoResult =
     DaprCapability.state(StoreName("statestore")):
       DaprCapability.lock(StoreName("lockstore")):
         val resource = LockResourceId("my-resource")
         for i <- 1 to N do
           val owner = LockOwner(s"worker-$i")
-          if DistributedLockCapability.tryLock(resource, owner, expirySeconds = 10) then
+          if DistributedLockCapability.tryLock(resource, owner, expiry = lockExpiry) then
             try
               val v = StateCapability.get[Int](counter).getOrElse(0)
               StateCapability.save(counter, v + 1)
@@ -698,6 +707,7 @@ object DistributedLockApp:
 
 `DistributedLockCapability` is **exclusive** — the compiler forbids handing it
 to another thread's closure. Lock/unlock pairing is structural (`try/finally`).
+`expiry` is a `FiniteDuration` built in the shell (safe code can't construct one).
 
 ---
 
@@ -705,13 +715,13 @@ to another thread's closure. Lock/unlock pairing is structural (`try/finally`).
 
 ```scala
       val secondAcquire =
-        if DistributedLockCapability.tryLock(resource, ownerA, 10) then
-          val second = DistributedLockCapability.tryLock(resource, ownerB, 1)
+        if DistributedLockCapability.tryLock(resource, ownerA, expiry = lockExpiry) then
+          val second = DistributedLockCapability.tryLock(resource, ownerB, expiry = shortExpiry)
           DistributedLockCapability.unlock(resource, ownerA)
           second          // false — B can't acquire while A holds it
         else false
 
-      val afterRelease = DistributedLockCapability.tryLock(resource, ownerB, 10)
+      val afterRelease = DistributedLockCapability.tryLock(resource, ownerB, expiry = lockExpiry)
       // true — now that A released, B succeeds
 ```
 
@@ -878,8 +888,8 @@ object ConversationDemoApp:
       val single = ConversationCapability.converse("hello world")           // alpha1
       val many   = ConversationCapability.converseMany(Seq("alpha", "beta", "gamma"))
 
-      val resp      = ConversationCapability.chat(Seq(ChatMessage.user("ping")))  // alpha2
-      val chatReply = resp.results.headOption.flatMap(_.choices.headOption).map(_.message.content)
+      val resp      = ConversationCapability.converseAlpha2(Seq(ConversationMessage.user("ping")))  // alpha2
+      val chatReply = resp.outputs.headOption.flatMap(_.choices.headOption).map(_.message.content)
       ConversationResult(single, many, chatReply)
 ```
 
@@ -1320,7 +1330,7 @@ plain control flow, effects tracked by `^` captures instead of a monad.
   - Mitigated: it's small, audited, and **one place per shell** in the examples
 - Capture checking has rough edges (compile-time blowups with many opaque types;
   `CanThrow` interactions with sibling lambdas)
-- Library scope: **11 building blocks**, 107 unit tests; actor *server* hosting and
+- Library scope: **12 building blocks**, 115 unit tests; actor *server* hosting and
   some workflow I/O encoding are still maturing
 - Blocking API today — a fine fit for **virtual threads**, not yet async-native
 
