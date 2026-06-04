@@ -828,6 +828,66 @@ the capability forbids awaiting outside, preserving replay determinism.
 
 ---
 
+## 10 · Cryptography — wrap/unwrap inside a scope
+
+```scala
+object CryptographyDemoApp:
+  def apply()(using DaprCapability): CryptoResult =
+    DaprCapability.crypto(CryptoComponentName("localstorage")):
+      val cipher    = CryptoCapability.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
+      val decrypted = CryptoCapability.decryptString(cipher)        // key ref rides in the ciphertext
+
+      val data       = ArraySeq.unsafeWrapArray("payload-bytes".getBytes("UTF-8"))
+      val cipherBytes = CryptoCapability.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
+      CryptoResult(plaintext, cipher.size, decrypted, CryptoCapability.decrypt(cipherBytes) == data)
+```
+
+`CryptoCapability` is **exclusive** to the `crypto(...)` scope. Payloads are
+immutable `ArraySeq[Byte]`; `decrypt` reads the key reference embedded in the
+ciphertext, so it needs only the bytes.
+
+---
+
+## 11 · Jobs — schedule now, fire later (both halves)
+
+```scala
+def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
+  JobsCapability.scheduleOnce(DemoJob, payload, Instant.now().plusSeconds(2)); payload
+
+def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit =
+  StateCapability.save(resultKey, payload)              // the trigger lands here
+
+DaprCapability.state(StateStore): DaprCapability.jobs:
+  DaprApp(
+    invocations = List(InvocationRoute[String, String](MethodName("schedule"))(scheduleDemo)),
+    jobs        = List(JobRoute[String](DemoJob)(onJobFired)),   // sidecar POSTs to /job/demo-job
+  )
+```
+
+The **client** asks the scheduler to fire later; the **trigger** is just another
+typed route. Both lambdas capture their capability from the enclosing scope.
+
+---
+
+## 12 · Conversation — alpha1 + alpha2, one capability
+
+```scala
+object ConversationDemoApp:
+  def apply()(using DaprCapability): ConversationResult =
+    DaprCapability.conversation(ConversationComponentName("echo")):
+      val single = ConversationCapability.converse("hello world")           // alpha1
+      val many   = ConversationCapability.converseMany(Seq("alpha", "beta", "gamma"))
+
+      val resp      = ConversationCapability.chat(Seq(ChatMessage.user("ping")))  // alpha2
+      val chatReply = resp.results.headOption.flatMap(_.choices.headOption).map(_.message.content)
+      ConversationResult(single, many, chatReply)
+```
+
+One `ConversationCapability` covers both wire APIs. The `echo` component echoes
+each prompt back, so the demo is deterministic with no real LLM provider.
+
+---
+
 ## Running any example
 
 ```bash
@@ -854,7 +914,7 @@ workflows) run a server + a driver in two terminals.
 # Part 5½
 ## Two real-world case studies
 
-*The seven examples are each one building block. Real systems compose several —
+*The twelve examples are each one building block. Real systems compose several —
 across several services. Here are two, modelled on production Dapr users.*
 
 ---
@@ -1260,7 +1320,7 @@ plain control flow, effects tracked by `^` captures instead of a monad.
   - Mitigated: it's small, audited, and **one place per shell** in the examples
 - Capture checking has rough edges (compile-time blowups with many opaque types;
   `CanThrow` interactions with sibling lambdas)
-- Library scope: **8 building blocks**, 141 unit tests; actor *server* hosting and
+- Library scope: **11 building blocks**, 107 unit tests; actor *server* hosting and
   some workflow I/O encoding are still maturing
 - Blocking API today — a fine fit for **virtual threads**, not yet async-native
 
@@ -1275,7 +1335,7 @@ plain control flow, effects tracked by `^` captures instead of a monad.
    lifetimes **visible to the type system**.
 3. **dapr4s** marries them: a **pure, checked core** of business logic over a
    **small, quarantined impure shell**.
-4. It's not a toy — the seven examples cover every building block, and **two
+4. It's not a toy — the twelve examples cover every building block, and **two
    real-world case studies** (Grafana's scan pipeline, ZEISS's order saga)
    compose them into multi-service systems.
 5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.
