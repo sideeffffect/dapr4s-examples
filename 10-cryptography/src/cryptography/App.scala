@@ -1,7 +1,6 @@
 package cryptography
 
 import dapr4s.*
-import scala.collection.immutable.ArraySeq
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // CryptoCapability is an ExclusiveCapability acquired by DaprCapability.crypto(...).
@@ -28,7 +27,7 @@ object CryptographyDemoApp:
       val cipher = CryptoCapability.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
       val decrypted = CryptoCapability.decryptString(cipher)
 
-      val data = ArraySeq.unsafeWrapArray("payload-bytes".getBytes("UTF-8"))
+      val data = Charsets.encodeString("payload-bytes", Charsets.Utf8)
       val cipherBytes = CryptoCapability.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
       val bytesRoundTrip = CryptoCapability.decrypt(cipherBytes) == data
 
