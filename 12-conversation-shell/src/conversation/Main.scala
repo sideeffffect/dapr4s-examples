@@ -21,5 +21,5 @@ private def daprConfigFromEnv(): DaprConfig =
     val r = ConversationDemoApp()
     println(s"converse(\"hello world\"): ${r.single}")
     println(s"converseMany(alpha, beta, gamma): ${r.many.mkString(" | ")}")
-    println(s"chat(user: ping) -> ${r.chatReply.getOrElse("<none>")}")
+    println(s"converseAlpha2(user: ping) -> ${r.chatReply.getOrElse("<none>")}")
   println("\n[conversation] done.")

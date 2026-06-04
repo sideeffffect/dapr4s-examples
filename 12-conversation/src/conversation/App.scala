@@ -7,7 +7,7 @@ import dapr4s.*
 // DaprCapability.conversation(...).  The demo runs against the built-in
 // `conversation.echo` component, which echoes each prompt straight back — so the
 // "completions" are deterministic and need no real LLM provider.  Both wire APIs
-// are exercised: alpha1 (converse / converseMany) and alpha2 (chat).
+// are exercised: alpha1 (converse / converseMany) and alpha2 (converseAlpha2).
 // ─────────────────────────────────────────────────────────────────────────────
 
 val EchoComponent = ConversationComponentName("echo")
@@ -25,8 +25,8 @@ object ConversationDemoApp:
 
       val many = ConversationCapability.converseMany(Seq("alpha", "beta", "gamma"))
 
-      val resp = ConversationCapability.chat(Seq(ChatMessage.user("ping")))
-      val chatReply = resp.results.headOption
+      val resp = ConversationCapability.converseAlpha2(Seq(ConversationMessage.user("ping")))
+      val chatReply = resp.outputs.headOption
         .flatMap(_.choices.headOption)
         .map(_.message.content)
 

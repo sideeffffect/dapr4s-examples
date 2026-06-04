@@ -1,6 +1,7 @@
 package distributedlock
 
 import dapr4s.*
+import scala.concurrent.duration.DurationInt
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ private def daprConfigFromEnv(): DaprConfig =
 @main def run(): Unit =
   println("=== 05 distributed-lock ===\n")
   Dapr(daprConfigFromEnv()).run:
-    val r = DistributedLockApp()
+    val r = DistributedLockApp(lockExpiry = 10.seconds, shortExpiry = 1.second)
     println(s"Counter after ${r.expected} sequential workers: ${r.finalCounter}  ${
         if r.finalCounter == r.expected then "✓" else "✗"
       }")
