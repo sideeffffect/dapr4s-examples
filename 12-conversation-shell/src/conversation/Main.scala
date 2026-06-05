@@ -19,7 +19,6 @@ private def daprConfigFromEnv(): DaprConfig =
   println("=== 12 conversation (echo component) ===\n")
   Dapr(daprConfigFromEnv()).run:
     val r = ConversationDemoApp()
-    println(s"converse(\"hello world\"): ${r.single}")
-    println(s"converseMany(alpha, beta, gamma): ${r.many.mkString(" | ")}")
-    println(s"converseAlpha2(user: ping) -> ${r.chatReply.getOrElse("<none>")}")
+    println(s"converse(user: ping) -> ${r.reply.getOrElse("<none>")}")
+    println(s"converse(system + user: hello world) -> ${r.withRoles.getOrElse("<none>")}")
   println("\n[conversation] done.")

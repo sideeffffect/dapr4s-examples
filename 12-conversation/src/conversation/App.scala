@@ -6,28 +6,32 @@ import dapr4s.*
 // ConversationCapability is an ExclusiveCapability acquired by
 // DaprCapability.conversation(...).  The demo runs against the built-in
 // `conversation.echo` component, which echoes each prompt straight back — so the
-// "completions" are deterministic and need no real LLM provider.  Both wire APIs
-// are exercised: alpha1 (converse / converseMany) and alpha2 (converseAlpha2).
+// "completions" are deterministic and need no real LLM provider.  `converse`
+// holds a multi-message exchange: message roles in, choices + usage out.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val EchoComponent = ConversationComponentName("echo")
 
-case class ConversationResult(
-    single: String,
-    many: List[String],
-    chatReply: Option[String],
+case class ConversationDemoResult(
+    reply: Option[String],
+    withRoles: Option[String],
 )
 
 object ConversationDemoApp:
-  def apply()(using DaprCapability): ConversationResult =
+  def apply()(using DaprCapability): ConversationDemoResult =
     DaprCapability.conversation(EchoComponent):
-      val single = ConversationCapability.converse("hello world")
+      // A single-message exchange — the echo component reflects the prompt back.
+      val resp = ConversationCapability.converse(Seq(ConversationMessage.user("ping")))
 
-      val many = ConversationCapability.converseMany(Seq("alpha", "beta", "gamma"))
+      // The same API carries multi-message context with explicit roles.
+      val resp2 = ConversationCapability.converse(
+        Seq(
+          ConversationMessage.system("be terse"),
+          ConversationMessage.user("hello world"),
+        ),
+      )
 
-      val resp = ConversationCapability.converseAlpha2(Seq(ConversationMessage.user("ping")))
-      val chatReply = resp.outputs.headOption
-        .flatMap(_.choices.headOption)
-        .map(_.message.content)
+      ConversationDemoResult(firstContent(resp), firstContent(resp2))
 
-      ConversationResult(single, many, chatReply)
+  private def firstContent(resp: ConversationResponse): Option[String] =
+    resp.outputs.headOption.flatMap(_.choices.headOption).map(_.message.content)

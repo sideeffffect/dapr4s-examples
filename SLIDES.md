@@ -64,6 +64,26 @@ style: |
 
 ---
 
+## The real enemy is complexity
+
+> *"Complexity is the single major difficulty in the successful development
+> of large-scale software."* — Moseley & Marks, **Out of the Tar Pit** (2006)
+
+Two kinds — and we routinely confuse them:
+
+- **Essential** — inherent in the problem (an order must be paid before it ships)
+- **Accidental** — what *we* drag in to make it run (clients, retries, wiring, lifetimes)
+
+Their two chief sources of *accidental* complexity:
+
+- **State** — you can't reason about a value without the whole history that produced it
+- **Control** — *how* and *when* code runs, tangled into *what* it computes
+
+> The goal isn't to delete complexity — it's to stop **adding** it, and to make
+> what remains **visible**. This talk attacks both: a runtime and a type system.
+
+---
+
 ## Microservices: the same five concerns, every time
 
 Every service that talks to another service re-implements:
@@ -137,7 +157,9 @@ language-agnostic **sidecar**.
 
 <br>
 
-**dapr4s** is where the two meet.
+**dapr4s** is where the two meet — Dapr lifts out the accidental complexity of
+*distribution*; Safe Scala attacks the accidental complexity of *state and
+control* by pinning both to the types.
 
 ---
 
@@ -390,6 +412,9 @@ Every example is **two Mill modules**:
 
 The boundary is the point: **untrusted-style logic is checked; messy
 real-world glue is quarantined in the shell.**
+
+This *is* the Tar Pit prescription — **separate the essential from the
+accidental** — but enforced by the compiler, not by discipline.
 
 ---
 
@@ -847,7 +872,7 @@ object CryptographyDemoApp:
       val cipher    = CryptoCapability.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
       val decrypted = CryptoCapability.decryptString(cipher)        // key ref rides in the ciphertext
 
-      val data       = ArraySeq.unsafeWrapArray("payload-bytes".getBytes("UTF-8"))
+      val data       = Charsets.encodeString("payload-bytes", Charsets.Utf8)
       val cipherBytes = CryptoCapability.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
       CryptoResult(plaintext, cipher.size, decrypted, CryptoCapability.decrypt(cipherBytes) == data)
 ```
@@ -879,22 +904,23 @@ typed route. Both lambdas capture their capability from the enclosing scope.
 
 ---
 
-## 12 · Conversation — alpha1 + alpha2, one capability
+## 12 · Conversation — a multi-message exchange
 
 ```scala
 object ConversationDemoApp:
-  def apply()(using DaprCapability): ConversationResult =
+  def apply()(using DaprCapability): ConversationDemoResult =
     DaprCapability.conversation(ConversationComponentName("echo")):
-      val single = ConversationCapability.converse("hello world")           // alpha1
-      val many   = ConversationCapability.converseMany(Seq("alpha", "beta", "gamma"))
-
-      val resp      = ConversationCapability.converseAlpha2(Seq(ConversationMessage.user("ping")))  // alpha2
-      val chatReply = resp.outputs.headOption.flatMap(_.choices.headOption).map(_.message.content)
-      ConversationResult(single, many, chatReply)
+      val resp = ConversationCapability.converse(Seq(
+        ConversationMessage.system("be terse"),
+        ConversationMessage.user("hello world"),       // roles, tools, usage — all typed
+      ))
+      val reply = resp.outputs.headOption.flatMap(_.choices.headOption).map(_.message.content)
+      ConversationDemoResult(reply)
 ```
 
-One `ConversationCapability` covers both wire APIs. The `echo` component echoes
-each prompt back, so the demo is deterministic with no real LLM provider.
+`converse` takes typed `ConversationMessage`s (roles, optional tool calls) and
+returns choices + token usage. The `echo` component echoes each prompt back, so
+the demo is deterministic with no real LLM provider.
 
 ---
 
@@ -1333,6 +1359,9 @@ plain control flow, effects tracked by `^` captures instead of a monad.
 - Library scope: **12 building blocks**, 115 unit tests; actor *server* hosting and
   some workflow I/O encoding are still maturing
 - Blocking API today — a fine fit for **virtual threads**, not yet async-native
+- It attacks **accidental** complexity — client lifetimes, effect leaks, wire-type
+  drift. The **essential** state of your domain still lives in the state store and
+  your data model; no type system makes that go away (as the *Tar Pit* critics note)
 
 > The *direction* — effects the compiler can prove — is the durable idea here.
 
@@ -1349,6 +1378,10 @@ plain control flow, effects tracked by `^` captures instead of a monad.
    real-world case studies** (Grafana's scan pipeline, ZEISS's order saga)
    compose them into multi-service systems.
 5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.
+
+> *Out of the Tar Pit* named the disease — accidental complexity from **state** and
+> **control**. dapr4s is one concrete prescription: lift it into a sidecar, pin the
+> rest to the types.
 
 ---
 
@@ -1370,6 +1403,7 @@ docs.dapr.io · scala-lang.org capture checking
   *Capabilities for Safe AI Agents* (EPFL 2026)
 - **Effect-systems landscape** — Kyo, Ox, Gears, Effekt; Cats Effect & ZIO
 - **Type-driven design** — King, *Parse, Don't Validate*; nrinaudo, *Scala Best Practices*
+- **Complexity** — Moseley & Marks, *Out of the Tar Pit* (2006) — essential vs. accidental, state & control
 - **dapr4s** — `DESIGN.md`, `SPEC.allium`, and the `wiki/` knowledge base in the repo
 
 <span class="small">Examples and the dapr4s library target Scala 3.9 nightly with experimental capture checking enabled.</span>
