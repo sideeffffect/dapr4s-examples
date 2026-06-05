@@ -60,8 +60,7 @@ def counterActorDefinition(
     JsonCodec[Unit],
     JsonCodec[String],
 ): ActorDefinition =
-  ActorDefinition(ActorTypeName): (id, ctx) =>
-    given ActorContext = ctx
+  ActorDefinition(ActorTypeName): _ =>
     ActorRoutes(
       methods = List(
         ActorMethodRoute[IncrBy, CounterState](MethodName("increment"))(increment),

@@ -775,8 +775,8 @@ def increment(req: IncrBy)(using ActorContext, JsonCodec[Int]): CounterState =
 ## 6 · Actors — wiring methods, timers, reminders
 
 ```scala
-ActorDefinition(ActorTypeName): (id, ctx) =>
-  given ActorContext = ctx
+ActorDefinition(ActorTypeName): id =>
+  // build is `ActorId => ActorContext ?=> ActorRoutes`, so ActorContext is implicit here
   ActorRoutes(
     methods = List(
       ActorMethodRoute[IncrBy, CounterState](MethodName("increment"))(increment),
