@@ -47,3 +47,7 @@ tests spin up Dapr infrastructure via testcontainers).
 ## Sponsors
 
 This work has been sponsored by [Chili Piper](https://github.com/Chili-Piper).
+
+## License
+
+Apache-2.0
