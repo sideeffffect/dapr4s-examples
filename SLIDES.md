@@ -858,8 +858,10 @@ def processOrder(order: OrderRequest, name: WorkflowName, timeout: FiniteDuratio
       case Some(snap) => ... snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
 ```
 
-`callActivity` returns a `Task[O]`; you can only `.await()` it **inside the run** —
-the capability forbids awaiting outside, preserving replay determinism.
+`callActivity` returns a `Task[O]` that **captures the `WorkflowContext`**
+(`Task[O]^{ctx}`). Capture checking forbids it from escaping `run` — you can't
+stash it in a field or outer `var` and `.await()` it later, when scheduling would
+no longer be deterministic. The `Task` lives and dies inside the run.
 
 ---
 
@@ -1232,8 +1234,9 @@ class OrderProcessingWorkflow extends Workflow:
 ```
 
 The nested `if/else` **is** the state-machine diagram. Each `callActivity` returns
-a `Task[O]` you can only `.await()` inside `run` — the capability forbids awaiting
-outside, keeping replay deterministic.
+a `Task[O]` that captures the exclusive `WorkflowContext` (`Task[O]^{ctx}`), so
+capture checking forbids it from escaping `run`. The whole state machine stays
+inside the run — that's what keeps replay deterministic.
 
 ---
 
