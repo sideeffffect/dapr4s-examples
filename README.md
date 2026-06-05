@@ -43,3 +43,7 @@ tests spin up Dapr infrastructure via testcontainers).
 ./mill e2e.testForked   # run the end-to-end suite
 ./mill slides           # render SLIDES.md to a PDF
 ```
+
+## Sponsors
+
+This work has been sponsored by [Chili Piper](https://github.com/Chili-Piper).
