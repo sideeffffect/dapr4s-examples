@@ -172,14 +172,34 @@ def slides: T[PathRef] = Task {
   // 2. Render every diagram to a crisp vector SVG. SVG stays sharp at any zoom
   //    in the PDF (no rasterisation blur); Chrome renders the mermaid foreignObject
   //    labels faithfully when Marp embeds the file.
-  for i <- 1 to n do
-    Task.log.info(s"rendering diagram-$i")
-    os.proc(
-      mmdc, "-p", work / "puppeteer.json",
-      "-i", work / s"diagram-$i.mmd",
-      "-o", work / s"diagram-$i.svg",
-      "-b", "transparent",
-    ).call(cwd = work, stdout = os.Inherit, stderr = os.Inherit)
+  //
+  //    The diagrams are independent, so render them concurrently — each mmdc spawns its
+  //    own headless Chrome. Concurrency is bounded by the CPU count, which is the same
+  //    effective limit Mill would apply if these were separate tasks (Mill caps parallel
+  //    task execution at -j / CPU count). They can't actually BE separate tasks: the
+  //    diagram count is only known after parsing SLIDES.md at run time, and Mill's task
+  //    graph is static (defined at build-load time, before any task runs).
+  locally {
+    import scala.concurrent.{Await, ExecutionContext, Future}
+    import scala.concurrent.duration.Duration
+    import java.util.concurrent.Executors
+    val pool = Executors.newFixedThreadPool(math.max(1, math.min(n, Runtime.getRuntime.availableProcessors)))
+    given ExecutionContext = ExecutionContext.fromExecutor(pool)
+    try
+      val rendered = (1 to n).map { i =>
+        Future {
+          Task.log.info(s"rendering diagram-$i")
+          os.proc(
+            mmdc, "-p", work / "puppeteer.json",
+            "-i", work / s"diagram-$i.mmd",
+            "-o", work / s"diagram-$i.svg",
+            "-b", "transparent",
+          ).call(cwd = work, stdout = os.Inherit, stderr = os.Inherit)
+        }
+      }
+      Await.result(Future.sequence(rendered), Duration.Inf)
+    finally pool.shutdown()
+  }
 
   // 3. Marp -> PDF (allow local files so the PNGs are embedded).
   val pdf = Task.dest / "SLIDES.pdf"
