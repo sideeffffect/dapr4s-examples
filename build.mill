@@ -253,28 +253,14 @@ object e2e extends BaseModule with TestModule.Munit:
   override def forkEnv: T[Map[String, String]] = Task {
     super.forkEnv() ++ Map("DOCKER_HOST" -> "unix:///var/run/docker.sock")
   }
+  // Only the project root is wired here — deliberately NOT every example's
+  // `.assembly()`. If we referenced them, Mill would treat each as a static
+  // dependency and force-build all ~18 shell assemblies on every `e2e.testForked`,
+  // even when a run only exercises one example. Instead the assembly JARs are
+  // located at run time by `Harness.locateJar` (scanning `out/`), so each CI leg
+  // (and you, locally) builds just the JARs it needs via an explicit
+  // `./mill … .assembly` first — e.g. the observability leg builds only
+  // `14-orders-shell` + `14-pricing-shell`. See .github/workflows/e2e.yml.
   override def forkArgs: T[Seq[String]] = Task {
-    Seq(
-      s"-De2e.projectRoot=${workspaceRoot}",
-      s"-De2e.jar.hello-state=${`01-hello-state-shell`.assembly().path}",
-      s"-De2e.jar.secrets-config=${`02-secrets-config-shell`.assembly().path}",
-      s"-De2e.jar.hello-pubsub=${`03-hello-pubsub-shell`.assembly().path}",
-      s"-De2e.jar.service-invocation=${`04-service-invocation-shell`.assembly().path}",
-      s"-De2e.jar.distributed-lock=${`05-distributed-lock-shell`.assembly().path}",
-      s"-De2e.jar.actors=${`06-actors-shell`.assembly().path}",
-      s"-De2e.jar.workflows=${`07-workflows-shell`.assembly().path}",
-      s"-De2e.jar.scan-gateway=${`12-scan-gateway-shell`.assembly().path}",
-      s"-De2e.jar.scan-worker=${`12-scan-worker-shell`.assembly().path}",
-      s"-De2e.jar.scan-results=${`12-scan-results-shell`.assembly().path}",
-      s"-De2e.jar.order-service=${`13-order-service-shell`.assembly().path}",
-      s"-De2e.jar.inventory-service=${`13-inventory-service-shell`.assembly().path}",
-      s"-De2e.jar.payment-service=${`13-payment-service-shell`.assembly().path}",
-      s"-De2e.jar.shipping-service=${`13-shipping-service-shell`.assembly().path}",
-      s"-De2e.jar.cryptography=${`08-cryptography-shell`.assembly().path}",
-      s"-De2e.jar.jobs=${`09-jobs-shell`.assembly().path}",
-      s"-De2e.jar.conversation=${`10-conversation-shell`.assembly().path}",
-      s"-De2e.jar.bindings=${`11-bindings-shell`.assembly().path}",
-      s"-De2e.jar.orders=${`14-orders-shell`.assembly().path}",
-      s"-De2e.jar.pricing=${`14-pricing-shell`.assembly().path}",
-    )
+    Seq(s"-De2e.projectRoot=${workspaceRoot}")
   }

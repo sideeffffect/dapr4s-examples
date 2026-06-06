@@ -92,8 +92,15 @@ jobs:
           xargs -P 4 -I{} docker pull -q {} < /tmp/ci-images.txt
           docker save $(tr '\n' ' ' < /tmp/ci-images.txt) -o ~/.docker-image-cache/images.tar
 
-      - name: Build assembly JARs
+      # Each leg builds only the assembly JARs its suites need (e2e.testForked no
+      # longer force-builds every example — see build.mill forkArgs).
+      - name: Build assembly JARs (core — all)
+        if: matrix.suite == 'core'
         run: ./mill __.assembly
+
+      - name: Build assembly JARs (observability — example 14 only)
+        if: matrix.suite == 'observability'
+        run: ./mill 14-orders-shell.assembly 14-pricing-shell.assembly
 
       # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
       # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.
