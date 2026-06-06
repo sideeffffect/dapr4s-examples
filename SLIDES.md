@@ -942,18 +942,18 @@ flowchart LR
   Http["jsonplaceholder<br/>HTTP API"]
   State[("state store")]
 
-  Client --> CRE
-  Client --> ENQ
-  CRE -->|"OUTPUT invoke POST /posts"| Sidecar
-  ENQ -->|"OUTPUT invokeOneWay"| Sidecar
-  Sidecar -->|produce| Kafka
-  Sidecar -->|"POST /posts"| Http
-  Kafka -->|"INPUT consume"| Sidecar
-  Sidecar -->|"POST /orders-queue"| BR
-  BR -->|"OUTPUT invoke GET /posts/N"| Sidecar
-  Sidecar -->|"GET /posts/N"| Http
-  BR -->|"save"| Sidecar
-  Sidecar --> State
+  Client -->|"1"| ENQ
+  ENQ -->|"2 · OUTPUT invokeOneWay"| Sidecar
+  Sidecar -->|"3 · produce"| Kafka
+  Kafka -->|"4 · INPUT consume"| Sidecar
+  Sidecar -->|"5 · POST /orders-queue"| BR
+  BR -->|"6 · OUTPUT invoke GET /posts/N"| Sidecar
+  Sidecar -->|"7 · GET /posts/N"| Http
+  BR -->|"8 · save"| Sidecar
+  Sidecar -->|"9"| State
+  Client -.->|"a"| CRE
+  CRE -.->|"b · OUTPUT invoke POST /posts"| Sidecar
+  Sidecar -.->|"c · POST /posts"| Http
   classDef ext fill:#ffe0b2,stroke:#e65100,color:#1a1a2e;
   classDef app fill:#d7e8ff,stroke:#16213e,color:#1a1a2e;
   class Kafka,Http,State ext
@@ -961,10 +961,12 @@ flowchart LR
 ```
 
 **Output** = `BindingsCapability` (you call it); **input** = a `BindingRoute` (it
-calls you). The same Kafka `orders-queue` binding is *both*: `/enqueue` produces a
-message, the sidecar delivers it back to the `BindingRoute`, which then uses the
-HTTP binding to fetch the post and persist it. Two bindings share one type, so
-they're plain `val`s (not `given`s) — no ambiguous implicit.
+calls you). The numbered solid path **1→9** is the round-trip: `/enqueue` produces
+to Kafka (**2–3**), the sidecar delivers it back to the `BindingRoute` (**4–5**),
+which fetches the post over the HTTP binding (**6–7**) and persists it (**8–9**) —
+so the same Kafka `orders-queue` binding is *both* output and input. The dashed
+path **a→c** is the standalone `/create` output call. Two bindings share one type,
+so they're plain `val`s (not `given`s) — no ambiguous implicit.
 
 ---
 
