@@ -1,0 +1,292 @@
+# Infrastructure for the 14 observability example.
+#
+# Two dapr4s apps (orders, pricing), each with its own daprd sidecar sharing the
+# app container's network namespace, send telemetry through one OpenTelemetry
+# Collector into a self-hosted SigNoz stack; a Diagrid dashboard inspects the
+# workflow state in Redis.
+#
+# Host ports are published as "${VAR:-}:container": with the var unset Docker
+# assigns an ephemeral host port (CI; read via Testcontainers getServicePort);
+# in presentation mode the fixture sets the vars to fixed, memorable ports.
+services:
+  # ── Dapr infra ───────────────────────────────────────────────────────────────
+  redis:
+    image: redis:6
+    networks: [obs-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [obs-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [obs-net]
+
+  # ── orders app + sidecar (workflow / invocation / pub-sub) ────────────────────
+  orders:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${ORDERS_JAR}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "orders.ordersServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "${ORDERS_DAPR_HOST:-}:3500"   # daprd HTTP (shares this netns) — start workflows
+      - "${ORDERS_METRICS_HOST:-}:9090" # daprd Prometheus metrics
+    networks: [obs-net]
+    depends_on: [redis, placement, scheduler]
+
+  orders-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:orders"
+    command:
+      - "./daprd"
+      - "-app-id=orders"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-config=/config/obsconfig.yaml"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+      - type: bind
+        source: ./obs/dapr-tracing-config.yaml
+        target: /config/obsconfig.yaml
+        read_only: true
+    depends_on:
+      orders:
+        condition: service_started
+
+  # ── pricing app + sidecar (service-invocation callee) ─────────────────────────
+  pricing:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${PRICING_JAR}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "pricing.pricingServer"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    networks: [obs-net]
+    depends_on: [redis, placement, scheduler]
+
+  pricing-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:pricing"
+    command:
+      - "./daprd"
+      - "-app-id=pricing"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-config=/config/obsconfig.yaml"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+      - type: bind
+        source: ./obs/dapr-tracing-config.yaml
+        target: /config/obsconfig.yaml
+        read_only: true
+    depends_on:
+      pricing:
+        condition: service_started
+
+  # ── Our OpenTelemetry Collector (the funnel) ──────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    # Run as root so the filelog receiver can read the root-owned Docker json logs.
+    user: "0:0"
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - type: bind
+        source: ./obs/otel-collector-config.yaml
+        target: /etc/otel-collector-config.yaml
+        read_only: true
+      # filelog tails the Docker json container logs (app + daprd stdout).
+      - type: bind
+        source: /var/lib/docker/containers
+        target: /var/lib/docker/containers
+        read_only: true
+    ports:
+      - "${COLLECTOR_HOST:-}:8888"   # the collector's own pipeline metrics (asserted on)
+    networks: [obs-net]
+    depends_on: [signoz-otel-collector]
+
+  # ── SigNoz (vendored from SigNoz/signoz deploy/, pinned) ──────────────────────
+  init-clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    restart: on-failure
+    command:
+      - bash
+      - -c
+      - |
+        version="v0.0.1"
+        node_os=$$(uname -s | tr '[:upper:]' '[:lower:]')
+        node_arch=$$(uname -m | sed s/aarch64/arm64/ | sed s/x86_64/amd64/)
+        echo "Fetching histogram-binary for $${node_os}/$${node_arch}"
+        cd /tmp
+        wget -O histogram-quantile.tar.gz "https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2F$${version}/histogram-quantile_$${node_os}_$${node_arch}.tar.gz"
+        tar -xvzf histogram-quantile.tar.gz
+        mv histogram-quantile /var/lib/clickhouse/user_scripts/histogramQuantile
+    volumes:
+      - ./signoz/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
+    networks: [obs-net]
+
+  zookeeper-1:
+    image: signoz/zookeeper:3.7.1
+    user: root
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    environment:
+      - ZOO_SERVER_ID=1
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_AUTOPURGE_INTERVAL=1
+      - ZOO_ENABLE_PROMETHEUS_METRICS=yes
+      - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
+    networks: [obs-net]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    tty: true
+    depends_on:
+      init-clickhouse:
+        condition: service_completed_successfully
+      zookeeper-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "0.0.0.0:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    volumes:
+      - ./signoz/clickhouse/config.xml:/etc/clickhouse-server/config.xml
+      - ./signoz/clickhouse/users.xml:/etc/clickhouse-server/users.xml
+      - ./signoz/clickhouse/custom-function.xml:/etc/clickhouse-server/custom-function.xml
+      - ./signoz/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
+      - ./signoz/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
+      - clickhouse:/var/lib/clickhouse/
+    networks: [obs-net]
+
+  signoz:
+    image: signoz/signoz:v0.127.0
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "${SIGNOZ_UI_HOST:-}:8080"   # SigNoz UI
+    volumes:
+      - sqlite:/var/lib/signoz/
+    environment:
+      - SIGNOZ_ALERTMANAGER_PROVIDER=signoz
+      - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://clickhouse:9000
+      - SIGNOZ_SQLSTORE_SQLITE_PATH=/var/lib/signoz/signoz.db
+      - SIGNOZ_TOKENIZER_JWT_SECRET=secret
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [obs-net]
+
+  signoz-otel-collector:
+    image: signoz/signoz-otel-collector:v0.144.5
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    entrypoint: ["/bin/sh"]
+    # Run with only the static --config (no --manager-config/OpAMP). SigNoz normally
+    # has the server push the collector's pipeline over OpAMP, but that handshake is
+    # brittle here (server/collector version coupling) and, when it fails, the OTLP
+    # :4317 listener never starts. The vendored config is a complete otlp→ClickHouse
+    # pipeline, so running it directly is self-contained and robust; the SigNoz UI
+    # reads the telemetry straight from ClickHouse regardless of OpAMP.
+    command:
+      - -c
+      - |
+        /signoz-otel-collector migrate sync check &&
+        /signoz-otel-collector --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./signoz/signoz-otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    environment:
+      - OTEL_RESOURCE_ATTRIBUTES=host.name=signoz-host,os.type=linux
+      - LOW_CARDINAL_EXCEPTION_GROUPING=false
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://clickhouse:9000
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true
+      - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
+    networks: [obs-net]
+
+  signoz-telemetrystore-migrator:
+    image: signoz/signoz-otel-collector:v0.144.5
+    restart: on-failure
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    entrypoint: ["/bin/sh"]
+    command:
+      - -c
+      - |
+        /signoz-otel-collector migrate bootstrap &&
+        /signoz-otel-collector migrate sync up &&
+        /signoz-otel-collector migrate async up
+    environment:
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://clickhouse:9000
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster
+      - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true
+      - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
+    networks: [obs-net]
+
+  # ── Diagrid dashboard (workflow inspector) ────────────────────────────────────
+  diagrid-dashboard:
+    image: ghcr.io/diagridio/diagrid-dashboard:0.0.3
+    environment:
+      COMPONENT_FILE: /app/components/custom_state.yaml
+    volumes:
+      - type: bind
+        source: ./obs/diagrid-state.yaml
+        target: /app/components/custom_state.yaml
+        read_only: true
+    ports:
+      - "${DIAGRID_HOST:-}:8080"   # Diagrid dashboard UI
+    networks: [obs-net]
+    depends_on: [redis]
+
+networks:
+  obs-net:
+
+volumes:
+  clickhouse:
+  sqlite:

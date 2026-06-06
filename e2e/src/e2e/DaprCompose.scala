@@ -172,6 +172,62 @@ final class ServerInfra(
   override def afterAll(): Unit =
     compose.foreach(_.stop())
 
+/** Infrastructure for the 14 observability example.
+  *
+  * Boots the orders + pricing apps (each with a daprd sidecar configured to export OTLP traces), an OpenTelemetry
+  * Collector that funnels traces/metrics/logs into a self-hosted SigNoz stack, and the Diagrid dashboard. Heavy: ~13
+  * containers incl. ClickHouse (needs >=4GB Docker memory); the global suite semaphore keeps it from overlapping other
+  * suites.
+  *
+  * When [[presentation]] is true the fixture pins fixed, memorable host ports (so the dashboard URLs are stable across
+  * runs) instead of letting Docker assign ephemeral ones.
+  */
+final class ObservabilityInfra(presentation: Boolean) extends Fixture[Nothing]("14-observability"):
+
+  private var compose: Option[ComposeContainer] = None
+
+  def apply(): Nothing = throw UnsupportedOperationException(s"$fixtureName is a lifecycle fixture")
+
+  // daprd shares the orders/pricing app netns, so its ports map on the app service.
+  def ordersDaprPort: Int = compose.get.getServicePort("orders", 3500)
+  def ordersMetricsPort: Int = compose.get.getServicePort("orders", 9090)
+  def signozPort: Int = compose.get.getServicePort("signoz", 8080)
+  def diagridPort: Int = compose.get.getServicePort("diagrid-dashboard", 8080)
+  def collectorMetricsPort: Int = compose.get.getServicePort("otel-collector", 8888)
+
+  override def beforeAll(): Unit =
+    val c = ComposeContainer(composeFile("docker-compose.14-observability.yml"))
+    c.withLocalCompose(true)
+    c.withEnv("ORDERS_JAR", Harness.jarFor("orders").toString)
+    c.withEnv("PRICING_JAR", Harness.jarFor("pricing").toString)
+    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
+    if presentation then
+      // Fixed, memorable host ports for the live demo (collision risk is accepted).
+      c.withEnv("SIGNOZ_UI_HOST", "3301")
+      c.withEnv("DIAGRID_HOST", "8080")
+      c.withEnv("ORDERS_DAPR_HOST", "3500")
+      c.withEnv("ORDERS_METRICS_HOST", "9090")
+      c.withEnv("COLLECTOR_HOST", "8888")
+    c.withExposedService("orders", 3500)
+    c.withExposedService("orders", 9090)
+    c.withExposedService("signoz", 8080)
+    c.withExposedService("diagrid-dashboard", 8080)
+    c.withExposedService("otel-collector", 8888)
+    val long = Duration.ofMinutes(8)
+    c.waitingFor("orders-dapr", Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(long))
+    c.waitingFor("pricing-dapr", Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(long))
+    c.waitingFor("signoz", Wait.forHealthcheck().withStartupTimeout(long))
+    // Critical: the SigNoz collector blocks in `migrate sync check` until ClickHouse
+    // migrations finish and only then opens its OTLP :4317 listener. Gate on its
+    // readiness so load is driven *after* SigNoz can ingest — otherwise the funnel's
+    // exporter retries time out and the dashboards stay empty.
+    c.waitingFor("signoz-otel-collector", Wait.forLogMessage(".*Everything is ready.*\n", 1).withStartupTimeout(long))
+    c.start()
+    compose = Some(c)
+
+  override def afterAll(): Unit =
+    compose.foreach(_.stop())
+
 /** Dapr infrastructure for multi-service E2E tests (examples 08 and 09).
   *
   * Unlike [[ServerInfra]] (one app + one sidecar), this boots a whole compose stack of several app containers, each

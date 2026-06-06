@@ -52,6 +52,7 @@ style: |
 4. **dapr4s** — design: pure core + impure shell
 5. **Eleven worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows, cryptography, jobs, conversation, bindings
    - plus **two real-world case studies** — Grafana scan pipeline, ZEISS order saga
+   - and an **operations capstone** — observability (SigNoz) + the Diagrid dashboard
 6. **The payoff** — what the compiler now guarantees
 7. **Trade-offs, status, and where this goes next
 
@@ -185,6 +186,14 @@ Audited by Cure53 and Ada Logics; a CNCF graduated project.
 
 ---
 
+## Dapr in one picture
+
+![Dapr building blocks sit between any language or runtime above and any cloud or edge infrastructure below](images/dapr-overview.png)
+
+*Any language on top, any backend on the bottom, a uniform set of building-block APIs in the middle.*
+
+---
+
 ## The sidecar pattern
 
 ```mermaid
@@ -202,6 +211,21 @@ flowchart LR
 
 Your app speaks to **`localhost`**. The sidecar handles discovery, retries,
 mTLS, tracing, and the actual backend. Swap the backend, keep the code.
+
+---
+
+## It's just HTTP to `localhost`
+
+![The app talks to its Dapr sidecar over the Dapr API; every building block is a REST/gRPC call](images/dapr-sidecar-api.png)
+
+*The verb after the version segment selects the building block — `invoke`, `state`,
+`publish`, `secrets`, `workflows`. dapr4s turns each of these into a typed capability.*
+
+---
+
+## The twelve building blocks
+
+![Cards for the twelve Dapr building blocks: service invocation, pub/sub, workflow, state, bindings, actors, secrets, configuration, distributed lock, cryptography, jobs, conversation](images/dapr-building-blocks.png)
 
 ---
 
@@ -576,7 +600,8 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 
 Each is a `pure` + `shell` module pair you can `dapr run`. Examples **12** and
 **13** are the two real-world case studies that close the deck (Grafana scan
-pipeline, ZEISS order saga).
+pipeline, ZEISS order saga); **14** is the operations capstone — observability +
+the Diagrid dashboard — in its own section after them.
 
 ---
 
@@ -1019,7 +1044,7 @@ workflows) run a server + a driver in two terminals.
 # Part 5½
 ## Two real-world case studies
 
-*The thirteen examples are each one building block. Real systems compose several —
+*The earlier examples are each one building block. Real systems compose several —
 across several services. Here are two, modelled on production Dapr users.*
 
 ---
@@ -1326,6 +1351,52 @@ inside the run — that's what keeps replay deterministic.
 
 <!-- _class: section-break -->
 
+# Part 5¾
+## Operations: observability & the dashboard
+
+*Building blocks ship the features; running them in production means **seeing** what
+they do — traces, metrics, logs — and inspecting live workflow state.*
+
+---
+
+## 14 · Observability + the Diagrid dashboard
+
+`OrderWorkflow` weaves **three** building blocks into one trace — an activity
+**invokes** the pricing service, then **publishes** an event an audit subscriber
+consumes — while every signal flows to one place:
+
+```mermaid
+flowchart LR
+  O["orders<br/>(workflow)"] -->|invoke| P["pricing"]
+  O -->|publish| A["audit sub"]
+  O -->|"OTLP · metrics · logs"| C["OTel Collector"]
+  P --> C
+  C --> S["SigNoz<br/>traces · metrics · logs"]
+  O -.->|workflow state| R[("Redis")]
+  R --> D["Diagrid<br/>dashboard"]
+  classDef app fill:#16213e,color:#fff,stroke:#16213e;
+  classDef infra fill:#f0a500,color:#1a1a2e,stroke:#c98a00;
+  class O,P,A app;
+  class C,S,D,R infra;
+```
+
+---
+
+## 14 · Observability — what it gives you
+
+- **One integrated backend** (SigNoz) for all three OTel signals — traces,
+  metrics, **and** logs — instead of gluing several tools together; the **Diagrid
+  dashboard** inspects live workflow instances from the Redis actor store.
+- **Safe Scala**: the I/O activities take `DaprCapability` **per call** (so they
+  may invoke / publish); the audit handler stays pure — `println` is `@rejectSafe`.
+- Ships as a **rigorous E2E** that asserts traces **+** metrics **+** logs all
+  reach SigNoz. Flip `PresentationMode` to hold the stack open with fixed URLs —
+  SigNoz `:3301`, Diagrid `:8080` — for a live demo.
+
+---
+
+<!-- _class: section-break -->
+
 # Part 6
 ## The payoff
 
@@ -1444,9 +1515,9 @@ plain control flow, effects tracked by `^` captures instead of a monad.
    lifetimes **visible to the type system**.
 3. **dapr4s** marries them: a **pure, checked core** of business logic over a
    **small, quarantined impure shell**.
-4. It's not a toy — the thirteen examples cover every building block, and **two
-   real-world case studies** (Grafana's scan pipeline, ZEISS's order saga)
-   compose them into multi-service systems.
+4. It's not a toy — the worked examples cover every building block (plus end-to-end
+   **observability**), and **two real-world case studies** (Grafana's scan pipeline,
+   ZEISS's order saga) compose them into multi-service systems.
 5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.
 
 > *Out of the Tar Pit* named the disease — accidental complexity from **state** and

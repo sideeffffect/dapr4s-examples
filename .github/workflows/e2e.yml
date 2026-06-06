@@ -9,7 +9,22 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # First (cache-miss) run pulls ~2.5GB of images and boots the heavy SigNoz
+    # stack for example 14; warm runs are much faster.
+    timeout-minutes: 45
+    # Split across two runners so the heavy SigNoz suite (example 14) runs in
+    # parallel with the 13 lighter suites instead of serially behind the global
+    # suite semaphore: `core` runs everything and skips 14 (E2E_SKIP_OBSERVABILITY),
+    # `observability` runs only 14. Both legs share the same image cache.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, observability]
+    name: e2e (${{ matrix.suite }})
+    # Job-level so the optional Docker Hub login step can gate on it in `if:`
+    # (a step cannot read its own step-level env in `if:`). Empty unless set.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
       - uses: actions/checkout@v4
@@ -32,19 +47,81 @@ jobs:
             mill-${{ hashFiles('.mill-version', 'build.mill') }}-
             mill-
 
+      # ── Container image cache ────────────────────────────────────────────────
+      # The E2E suite boots every example's Docker stack via Testcontainers. Cold
+      # pulls of all images (incl. the heavy SigNoz + ClickHouse set for example 14)
+      # are slow and hit Docker Hub's anonymous rate limit. We cache `docker save`
+      # tarballs of the exact image set, keyed by a hash of that set, and `docker load`
+      # them on a hit — so each image is fetched from a registry at most once per set.
+      - name: Compute image set
+        id: imageset
+        run: |
+          grep -rhoE 'image:[[:space:]]*[^[:space:]]+' e2e/docker/*.yml \
+            | sed -E 's/image:[[:space:]]*//' | sort -u > /tmp/ci-images.txt
+          echo "Images to cache:"; cat /tmp/ci-images.txt
+          echo "hash=$(sha256sum /tmp/ci-images.txt | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Docker image cache
+        id: imgcache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.docker-image-cache
+          key: docker-images-v1-${{ steps.imageset.outputs.hash }}
+
+      - name: Load cached images
+        if: steps.imgcache.outputs.cache-hit == 'true'
+        run: docker load -i ~/.docker-image-cache/images.tar
+
+      # Optional: authenticate to Docker Hub to lift the anonymous pull-rate limit on
+      # the cold pull. No-op unless the DOCKERHUB_USERNAME/DOCKERHUB_TOKEN repo secrets
+      # are set (secrets aren't readable in `if:`, so they're mapped to env first).
+      - name: Log in to Docker Hub (optional)
+        if: steps.imgcache.outputs.cache-hit != 'true' && env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull and save images (cache miss)
+        id: pullsave
+        if: steps.imgcache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.docker-image-cache
+          # Pull concurrently to cut wall-clock, then snapshot all images into a single
+          # tarball so shared base layers (e.g. the eclipse-temurin base) are stored once.
+          xargs -P 4 -I{} docker pull -q {} < /tmp/ci-images.txt
+          docker save $(tr '\n' ' ' < /tmp/ci-images.txt) -o ~/.docker-image-cache/images.tar
+
       - name: Build assembly JARs
         run: ./mill __.assembly
 
-      - name: Run E2E tests
-        # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
-        # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.
+      # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
+      # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.
+      - name: Run E2E tests (core — all but observability)
+        if: matrix.suite == 'core'
         run: ./mill e2e.testForked
+        env:
+          E2E_SKIP_OBSERVABILITY: '1'
+
+      - name: Run E2E tests (observability only)
+        if: matrix.suite == 'observability'
+        run: ./mill e2e.testForked '*observability*'
+
+      # Persist only when the pull step actually succeeded (avoid caching a partial
+      # tarball from a rate-limited pull); `always()` so a later test failure still
+      # keeps the freshly pulled images for the next run.
+      - name: Save Docker image cache
+        if: always() && steps.imgcache.outputs.cache-hit != 'true' && steps.pullsave.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.docker-image-cache
+          key: docker-images-v1-${{ steps.imageset.outputs.hash }}
 
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.suite }}
           path: out/e2e/testForked.dest/
           if-no-files-found: ignore
 

@@ -280,6 +280,21 @@ dapr run --app-id order-service \
          -- mill 09-order-service-shell.runMain orderservice.orderDriver
 ```
 
+### 14 — observability + Diagrid dashboard
+
+Unlike the others, this example is driven through its E2E (it needs the whole
+SigNoz + Diagrid stack, wired by `e2e/docker/docker-compose.14-observability.yml`):
+
+```bash
+# normal: bounded run, rigorous assertions (traces+metrics+logs reach SigNoz)
+./mill e2e.testForked '*observability*'
+```
+
+For a live demo, set `PresentationMode = true` in
+`e2e/src/e2e/Example14ObservabilityTest.scala` and run the same command — it pins
+fixed URLs (SigNoz <http://localhost:3301>, Diagrid <http://localhost:8080>) and
+trickles orders forever (Ctrl-C to stop). See `SPEC-14-observability.md`.
+
 ---
 
 ## Example progression
@@ -298,6 +313,14 @@ dapr run --app-id order-service \
 | 10 | `10-cryptography/` | `10-cryptography-shell/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability` over immutable `ArraySeq[Byte]`; one-shot client |
 | 11 | `11-jobs/` | `11-jobs-shell/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability` (client) + `JobRoute` (trigger); handler persists payload to state |
 | 12 | `12-conversation/` | `12-conversation-shell/` | LLM conversation (alpha1 `converse` + alpha2 `chat`) | `ConversationCapability` against the `conversation.echo` component |
+| 14 | `14-orders/`, `14-pricing/` | matching `-shell/` modules | Observability: `OrderWorkflow` → service invocation (pricing) + pub/sub; daprd OTLP tracing into SigNoz; workflow state in the Diagrid dashboard | I/O activities receive `DaprCapability` per call (invoke pricing / publish events); the audit handler stays pure — `println` is `@rejectSafe` under safe mode |
+
+> The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
+> SigNoz by asserting the funnel collector's own pipeline counters
+> (`otelcol_exporter_sent_spans` / `_metric_points` / `_log_records` > 0) — no SigNoz
+> API auth needed. Flip `PresentationMode = true` in that test to hold the whole stack
+> up forever with fixed URLs (SigNoz `:3301`, Diagrid `:8080`) for a live demo. See
+> `SPEC-14-observability.md`.
 
 ---
 

@@ -1,0 +1,17 @@
+# State component the Diagrid dashboard reads to inspect workflow instances.
+# Points at the compose `redis` service (the actor state store the orders
+# sidecar persists workflow history to). Mounted at COMPONENT_FILE.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+  - name: redisHost
+    value: redis:6379
+  - name: redisPassword
+    value: ""
+  - name: actorStateStore
+    value: "true"
