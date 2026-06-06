@@ -1,0 +1,28 @@
+# Kafka binding used in BOTH directions by example 13:
+#   • output — BindingsCapability.invokeOneWay(create, …) publishes to `publishTopic`
+#   • input  — daprd consumes `topics` and POSTs each message to the app's
+#              BindingRoute(BindingName("orders-queue")).
+# For local runs, point `brokers` at your Kafka (localhost:9092). The E2E test
+# rewrites localhost:9092 → kafka:9092 to reach the Kafka container by service name.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: orders-queue
+spec:
+  type: bindings.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: "localhost:9092"
+    - name: topics          # consumed (input) topics
+      value: "orders"
+    - name: publishTopic    # produced (output) topic
+      value: "orders"
+    - name: consumerGroup
+      value: "bindings-example"
+    - name: authType
+      value: "none"
+    - name: initialOffset
+      value: "oldest"
+    - name: direction
+      value: "input, output"

@@ -1,0 +1,15 @@
+# HTTP output binding pointed at the public jsonplaceholder REST API.
+# BindingsCapability.invoke(get|post, path=/posts[/N]) issues the HTTP call;
+# the operation maps to the HTTP verb and `path` metadata is appended to `url`.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: jsonplaceholder
+spec:
+  type: bindings.http
+  version: v1
+  metadata:
+    - name: url
+      value: "https://jsonplaceholder.typicode.com"
+    - name: direction
+      value: "output"

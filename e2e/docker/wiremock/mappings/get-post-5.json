@@ -1,0 +1,13 @@
+{
+  "request": { "method": "GET", "urlPath": "/posts/5" },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "userId": 1,
+      "id": 5,
+      "title": "nesciunt quas odio",
+      "body": "stubbed body for post 5"
+    }
+  }
+}

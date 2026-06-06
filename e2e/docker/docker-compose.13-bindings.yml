@@ -1,0 +1,129 @@
+# Server E2E stack for example 13 (bindings), = docker-compose.server.yml plus a
+# single-node Kafka (KRaft, no ZooKeeper). The app's `orders-queue` binding produces
+# to and consumes from this Kafka; the `jsonplaceholder` HTTP output binding reaches
+# the public internet. daprd shares the app container's network namespace, so it sees
+# Kafka at kafka:9092 over dapr-net (same as the app).
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  kafka:
+    image: apache/kafka:3.9.0
+    networks: [dapr-net]
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      # Bind with an empty host (":9092"), not "0.0.0.0:9092" — the apache/kafka KRaft
+      # format step copies listeners into advertised.listeners and rejects 0.0.0.0 there.
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # Hermetic stand-in for the external HTTP API (jsonplaceholder). The runnable
+  # example points the `jsonplaceholder` binding at the real service; the E2E points
+  # it here so CI never depends on a third-party endpoint (which rate-limits / resets
+  # connections under repeated automated calls). Stubs GET /posts/5 and POST /posts.
+  httpstub:
+    image: wiremock/wiremock:3.9.1
+    networks: [dapr-net]
+    volumes:
+      - type: bind
+        source: ${WIREMOCK_MAPPINGS}
+        target: /home/wiremock/mappings
+        read_only: true
+
+  # Pre-create the `orders` topic before daprd starts. Otherwise the topic is created
+  # lazily on first publish, and the input-binding consumer — which subscribes at startup —
+  # races metadata refresh and may never pick up the new partitions (flaky non-delivery).
+  kafka-init:
+    image: apache/kafka:3.9.0
+    networks: [dapr-net]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
+      - "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic orders --partitions 1 --replication-factor 1"
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  app:
+    image: eclipse-temurin:25-jre
+    volumes:
+      - type: bind
+        source: ${JAR_PATH}
+        target: /app.jar
+        read_only: true
+    command: ["java", "-cp", "/app.jar", "${MAIN_CLASS}"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on:
+      redis:
+        condition: service_started
+      placement:
+        condition: service_started
+      scheduler:
+        condition: service_started
+      httpstub:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:app"
+    command:
+      - "./daprd"
+      - "-app-id=${APP_ID}"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      app:
+        condition: service_started
+
+networks:
+  dapr-net:

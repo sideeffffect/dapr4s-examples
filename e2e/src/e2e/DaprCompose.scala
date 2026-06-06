@@ -118,6 +118,17 @@ final class ServerInfra(
     jarModule: String,
     mainClass: String,
     postStart: ServerInfra => Unit = _ => (),
+    // Override to boot a compose file other than the shared server template
+    // (e.g. one that adds a Kafka broker for the bindings example).
+    composeFileName: String = "docker-compose.server.yml",
+    // Extra component YAMLs (filename -> content) dropped into the prepared
+    // components dir for this fixture only — used by examples whose component
+    // can't live in the shared components/ dir (e.g. the binding components,
+    // which would make every other example's daprd dial Kafka).
+    extraComponents: Map[String, String] = Map.empty,
+    // Extra compose env vars, evaluated in beforeAll (e.g. an absolute path to
+    // WireMock stub mappings for the bindings example's HTTP binding).
+    extraEnv: () => Map[String, String] = () => Map.empty,
 ) extends Fixture[Nothing](appId):
 
   private var compose: Option[ComposeContainer] = None
@@ -137,12 +148,15 @@ final class ServerInfra(
       .trim
 
   override def beforeAll(): Unit =
-    val c = ComposeContainer(composeFile("docker-compose.server.yml"))
+    val c = ComposeContainer(composeFile(composeFileName))
     c.withLocalCompose(true)
     c.withEnv("APP_ID", appId)
     c.withEnv("JAR_PATH", Harness.jarFor(jarModule).toString)
     c.withEnv("MAIN_CLASS", mainClass)
-    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
+    val compDir = prepareComponents()
+    extraComponents.foreach((name, content) => os.write(compDir / name, content))
+    c.withEnv("COMPONENTS_PATH", compDir.toString)
+    extraEnv().foreach((k, v) => c.withEnv(k, v))
     c.withExposedService("app", 3500)
     c.withExposedService("app", 8080)
     c.waitingFor(

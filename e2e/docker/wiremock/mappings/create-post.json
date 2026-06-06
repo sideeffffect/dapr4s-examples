@@ -1,0 +1,13 @@
+{
+  "request": { "method": "POST", "urlPath": "/posts" },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "userId": 1,
+      "id": 101,
+      "title": "hello",
+      "body": "from dapr4s"
+    }
+  }
+}

@@ -952,7 +952,7 @@ workflows) run a server + a driver in two terminals.
 # Part 5½
 ## Two real-world case studies
 
-*The twelve examples are each one building block. Real systems compose several —
+*The thirteen examples are each one building block. Real systems compose several —
 across several services. Here are two, modelled on production Dapr users.*
 
 ---
@@ -1370,6 +1370,33 @@ plain control flow, effects tracked by `^` captures instead of a monad.
 
 ---
 
+## 13 · Bindings — both directions, one app
+
+```scala
+val ordersQueue     = cap.binding(OrdersQueue)      // Kafka  — bidirectional
+val jsonPlaceholder = cap.binding(JsonPlaceholder)  // HTTP   — output (jsonplaceholder.typicode.com)
+
+DaprCapability.state(StateStore):
+  DaprApp(
+    invocations = List(
+      InvocationRoute[PostRef, String](MethodName("enqueue")): ref =>
+        ordersQueue.invokeOneWay(BindingOperation("create"), ref)       // OUTPUT → Kafka
+        s"enqueued post ${ref.postId}",
+    ),
+    bindings = List(                                                     // INPUT ← Kafka
+      BindingRoute[PostRef](OrdersQueue): ref =>
+        jsonPlaceholder.invoke(BindingOperation("get"), "", pathMeta(s"/posts/${ref.postId}"))[Post]  // OUTPUT → HTTP
+          .foreach(post => StateCapability.save(postKey(post.id), post)),
+    ),
+  )
+```
+
+**Output** = `BindingsCapability` (you call it); **input** = a `BindingRoute` (it calls
+you). The same Kafka binding is both. Two bindings share one type, so they're plain
+`val`s (not `given`s) — no ambiguous implicit.
+
+---
+
 ## Takeaways
 
 1. **Dapr** moves the hard distributed plumbing into a sidecar — and out of your code.
@@ -1377,7 +1404,7 @@ plain control flow, effects tracked by `^` captures instead of a monad.
    lifetimes **visible to the type system**.
 3. **dapr4s** marries them: a **pure, checked core** of business logic over a
    **small, quarantined impure shell**.
-4. It's not a toy — the twelve examples cover every building block, and **two
+4. It's not a toy — the thirteen examples cover every building block, and **two
    real-world case studies** (Grafana's scan pipeline, ZEISS's order saga)
    compose them into multi-service systems.
 5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.

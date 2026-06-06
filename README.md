@@ -32,6 +32,7 @@ Every example is two modules:
 | 10 | Cryptography (encrypt / decrypt via crypto.dapr.localstorage) |
 | 11 | Jobs (schedule a job; the sidecar fires it back to a JobRoute) |
 | 12 | Conversation / LLM (alpha1 converse + alpha2 converseAlpha2, echo component) |
+| 13 | Bindings (output: HTTP to jsonplaceholder + Kafka; input: a BindingRoute triggered by Kafka) |
 
 ## Build & test
 
