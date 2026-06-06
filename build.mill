@@ -62,6 +62,11 @@ object `09-jobs` extends PureModule
 object `10-conversation` extends PureModule
 object `11-bindings` extends PureModule
 
+// Observability & the Diagrid dashboard: a workflow that fans across service
+// invocation + pub/sub, with traces/metrics/logs funnelled into SigNoz.
+object `14-orders` extends PureModule
+object `14-pricing` extends PureModule
+
 // Services files from multiple JARs must be merged (not last-wins) so that
 // gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)
 // are all registered. Mill's default rules don't do this, so we add it here.
@@ -109,6 +114,10 @@ object `10-conversation-shell` extends ShellModule:
   override def moduleDeps = Seq(`10-conversation`)
 object `11-bindings-shell` extends ShellModule:
   override def moduleDeps = Seq(`11-bindings`)
+object `14-orders-shell` extends ShellModule:
+  override def moduleDeps = Seq(`14-orders`)
+object `14-pricing-shell` extends ShellModule:
+  override def moduleDeps = Seq(`14-pricing`)
 
 // ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
 // Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
@@ -123,10 +132,18 @@ object `11-bindings-shell` extends ShellModule:
 // ─────────────────────────────────────────────────────────────────────────────
 def slidesSource = Task.Source("SLIDES.md")
 
+// Static raster images referenced by SLIDES.md via `![](images/foo.png)`.
+def slideImages = Task.Source("images")
+
 def slides: T[PathRef] = Task {
   val src = slidesSource().path
   val work = Task.dest / "work"
   os.makeDir.all(work)
+
+  // Copy static slide images (e.g. ![](images/foo.png) in SLIDES.md) into the work
+  // dir so the references resolve next to the generated deck.md that Marp renders.
+  val imagesDir = slideImages().path
+  if os.exists(imagesDir) then os.copy.into(imagesDir, work, replaceExisting = true)
 
   def resolve(cmd: String): os.Path =
     val r = os.proc("which", cmd).call(check = false, stderr = os.Pipe)
@@ -257,5 +274,7 @@ object e2e extends BaseModule with TestModule.Munit:
       s"-De2e.jar.jobs=${`09-jobs-shell`.assembly().path}",
       s"-De2e.jar.conversation=${`10-conversation-shell`.assembly().path}",
       s"-De2e.jar.bindings=${`11-bindings-shell`.assembly().path}",
+      s"-De2e.jar.orders=${`14-orders-shell`.assembly().path}",
+      s"-De2e.jar.pricing=${`14-pricing-shell`.assembly().path}",
     )
   }

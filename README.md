@@ -33,6 +33,7 @@ Every example is two modules:
 | 11 | Bindings (output: HTTP to jsonplaceholder + Kafka; input: a BindingRoute triggered by Kafka) |
 | 12 | Grafana-style scan pipeline (fan-out, dedup, retry, dead-letter queue) — *real-world case study* |
 | 13 | Order-fulfillment saga across inventory / payment / shipping services — *real-world case study* |
+| 14 | Observability & the Diagrid dashboard (OrderWorkflow → service invocation + pub/sub; traces/metrics/logs into SigNoz; workflow state in the Diagrid dashboard) |
 
 ## Build & test
 
@@ -44,6 +45,26 @@ tests spin up Dapr infrastructure via testcontainers).
 ./mill e2e.testForked   # run the end-to-end suite
 ./mill slides           # render SLIDES.md to a PDF
 ```
+
+### Demoing the observability example (14)
+
+Example 14 runs as a normal E2E (rigorous assertions that traces, metrics, and
+logs all reach SigNoz). To present the dashboards live without the test ever
+tearing down, flip one flag — `PresentationMode` in
+`e2e/src/e2e/Example14ObservabilityTest.scala` — to `true` and run only that suite:
+
+```bash
+./mill __.assembly
+./mill e2e.testForked e2e.Example14ObservabilityTest
+```
+
+It then pins fixed URLs and keeps a gentle trickle of orders flowing forever
+(Ctrl-C to stop):
+
+- **SigNoz** (traces + metrics + logs): <http://localhost:3301>
+- **Diagrid dashboard** (workflow state): <http://localhost:8080>
+
+The stack is heavy (a full self-hosted SigNoz + ClickHouse); give Docker **≥4 GB**.
 
 ## Sponsors
 

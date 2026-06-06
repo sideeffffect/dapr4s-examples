@@ -1,0 +1,60 @@
+# Our OpenTelemetry Collector — the single funnel that unifies all three signals
+# and forwards them to SigNoz:
+#   - traces : received via OTLP from the Dapr sidecars (push)
+#   - metrics: scraped from each daprd's Prometheus endpoint (:9090) (pull)
+#   - logs   : tailed from the Docker container json logs (app + daprd stdout)
+# Its own pipeline counters are exposed on :8888 and are what the E2E asserts on
+# (otelcol_exporter_sent_spans / _metric_points / _log_records > 0).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: dapr-sidecars
+          scrape_interval: 10s
+          static_configs:
+            # daprd binds :9090 inside each app container's network namespace,
+            # so it is reachable on the obs network as <app-service>:9090.
+            - targets: ["orders:9090", "pricing:9090"]
+  filelog:
+    include:
+      - /var/lib/docker/containers/*/*.log
+    start_at: end
+    include_file_path: true
+
+processors:
+  batch: {}
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+
+exporters:
+  otlp/signoz:
+    endpoint: signoz-otel-collector:4317
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    metrics:
+      # Expose the collector's own pipeline metrics for the E2E assertions.
+      level: detailed
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [otlp/signoz]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [resourcedetection, batch]
+      exporters: [otlp/signoz]
+    logs:
+      receivers: [otlp, filelog]
+      processors: [resourcedetection, batch]
+      exporters: [otlp/signoz]
