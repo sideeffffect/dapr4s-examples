@@ -27,12 +27,12 @@ Every example is two modules:
 | 05 | Distributed lock |
 | 06 | Actors |
 | 07 | Workflows |
-| 08 | Grafana-style scan pipeline (fan-out, dedup, retry, dead-letter queue) |
-| 09 | Order-fulfillment saga across inventory / payment / shipping services |
-| 10 | Cryptography (encrypt / decrypt via crypto.dapr.localstorage) |
-| 11 | Jobs (schedule a job; the sidecar fires it back to a JobRoute) |
-| 12 | Conversation / LLM (alpha1 converse + alpha2 converseAlpha2, echo component) |
-| 13 | Bindings (output: HTTP to jsonplaceholder + Kafka; input: a BindingRoute triggered by Kafka) |
+| 08 | Cryptography (encrypt / decrypt via crypto.dapr.localstorage) |
+| 09 | Jobs (schedule a job; the sidecar fires it back to a JobRoute) |
+| 10 | Conversation / LLM (alpha1 converse + alpha2 converseAlpha2, echo component) |
+| 11 | Bindings (output: HTTP to jsonplaceholder + Kafka; input: a BindingRoute triggered by Kafka) |
+| 12 | Grafana-style scan pipeline (fan-out, dedup, retry, dead-letter queue) — *real-world case study* |
+| 13 | Order-fulfillment saga across inventory / payment / shipping services — *real-world case study* |
 
 ## Build & test
 

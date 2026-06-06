@@ -46,21 +46,21 @@ object `06-actors` extends PureModule
 object `07-workflows` extends PureModule
 
 // Real-world case study: Grafana-style event-driven vulnerability scanner.
-object `08-scan-gateway` extends PureModule
-object `08-scan-worker` extends PureModule
-object `08-scan-results` extends PureModule
+object `12-scan-gateway` extends PureModule
+object `12-scan-worker` extends PureModule
+object `12-scan-results` extends PureModule
 
 // Real-world case study: ZEISS-style order fulfillment (saga across services).
-object `09-order-service` extends PureModule
-object `09-inventory-service` extends PureModule
-object `09-payment-service` extends PureModule
-object `09-shipping-service` extends PureModule
+object `13-order-service` extends PureModule
+object `13-inventory-service` extends PureModule
+object `13-payment-service` extends PureModule
+object `13-shipping-service` extends PureModule
 
 // Remaining building blocks: cryptography, jobs, conversation (LLM).
-object `10-cryptography` extends PureModule
-object `11-jobs` extends PureModule
-object `12-conversation` extends PureModule
-object `13-bindings` extends PureModule
+object `08-cryptography` extends PureModule
+object `09-jobs` extends PureModule
+object `10-conversation` extends PureModule
+object `11-bindings` extends PureModule
 
 // Services files from multiple JARs must be merged (not last-wins) so that
 // gRPC's ServiceLoader-based providers (DNS resolver, channel provider, etc.)
@@ -87,28 +87,28 @@ object `06-actors-shell` extends ShellModule:
   override def moduleDeps = Seq(`06-actors`)
 object `07-workflows-shell` extends ShellModule:
   override def moduleDeps = Seq(`07-workflows`)
-object `08-scan-gateway-shell` extends ShellModule:
-  override def moduleDeps = Seq(`08-scan-gateway`)
-object `08-scan-worker-shell` extends ShellModule:
-  override def moduleDeps = Seq(`08-scan-worker`)
-object `08-scan-results-shell` extends ShellModule:
-  override def moduleDeps = Seq(`08-scan-results`)
-object `09-order-service-shell` extends ShellModule:
-  override def moduleDeps = Seq(`09-order-service`)
-object `09-inventory-service-shell` extends ShellModule:
-  override def moduleDeps = Seq(`09-inventory-service`)
-object `09-payment-service-shell` extends ShellModule:
-  override def moduleDeps = Seq(`09-payment-service`)
-object `09-shipping-service-shell` extends ShellModule:
-  override def moduleDeps = Seq(`09-shipping-service`)
-object `10-cryptography-shell` extends ShellModule:
-  override def moduleDeps = Seq(`10-cryptography`)
-object `11-jobs-shell` extends ShellModule:
-  override def moduleDeps = Seq(`11-jobs`)
-object `12-conversation-shell` extends ShellModule:
-  override def moduleDeps = Seq(`12-conversation`)
-object `13-bindings-shell` extends ShellModule:
-  override def moduleDeps = Seq(`13-bindings`)
+object `12-scan-gateway-shell` extends ShellModule:
+  override def moduleDeps = Seq(`12-scan-gateway`)
+object `12-scan-worker-shell` extends ShellModule:
+  override def moduleDeps = Seq(`12-scan-worker`)
+object `12-scan-results-shell` extends ShellModule:
+  override def moduleDeps = Seq(`12-scan-results`)
+object `13-order-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`13-order-service`)
+object `13-inventory-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`13-inventory-service`)
+object `13-payment-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`13-payment-service`)
+object `13-shipping-service-shell` extends ShellModule:
+  override def moduleDeps = Seq(`13-shipping-service`)
+object `08-cryptography-shell` extends ShellModule:
+  override def moduleDeps = Seq(`08-cryptography`)
+object `09-jobs-shell` extends ShellModule:
+  override def moduleDeps = Seq(`09-jobs`)
+object `10-conversation-shell` extends ShellModule:
+  override def moduleDeps = Seq(`10-conversation`)
+object `11-bindings-shell` extends ShellModule:
+  override def moduleDeps = Seq(`11-bindings`)
 
 // ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
 // Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
@@ -246,16 +246,16 @@ object e2e extends BaseModule with TestModule.Munit:
       s"-De2e.jar.distributed-lock=${`05-distributed-lock-shell`.assembly().path}",
       s"-De2e.jar.actors=${`06-actors-shell`.assembly().path}",
       s"-De2e.jar.workflows=${`07-workflows-shell`.assembly().path}",
-      s"-De2e.jar.scan-gateway=${`08-scan-gateway-shell`.assembly().path}",
-      s"-De2e.jar.scan-worker=${`08-scan-worker-shell`.assembly().path}",
-      s"-De2e.jar.scan-results=${`08-scan-results-shell`.assembly().path}",
-      s"-De2e.jar.order-service=${`09-order-service-shell`.assembly().path}",
-      s"-De2e.jar.inventory-service=${`09-inventory-service-shell`.assembly().path}",
-      s"-De2e.jar.payment-service=${`09-payment-service-shell`.assembly().path}",
-      s"-De2e.jar.shipping-service=${`09-shipping-service-shell`.assembly().path}",
-      s"-De2e.jar.cryptography=${`10-cryptography-shell`.assembly().path}",
-      s"-De2e.jar.jobs=${`11-jobs-shell`.assembly().path}",
-      s"-De2e.jar.conversation=${`12-conversation-shell`.assembly().path}",
-      s"-De2e.jar.bindings=${`13-bindings-shell`.assembly().path}",
+      s"-De2e.jar.scan-gateway=${`12-scan-gateway-shell`.assembly().path}",
+      s"-De2e.jar.scan-worker=${`12-scan-worker-shell`.assembly().path}",
+      s"-De2e.jar.scan-results=${`12-scan-results-shell`.assembly().path}",
+      s"-De2e.jar.order-service=${`13-order-service-shell`.assembly().path}",
+      s"-De2e.jar.inventory-service=${`13-inventory-service-shell`.assembly().path}",
+      s"-De2e.jar.payment-service=${`13-payment-service-shell`.assembly().path}",
+      s"-De2e.jar.shipping-service=${`13-shipping-service-shell`.assembly().path}",
+      s"-De2e.jar.cryptography=${`08-cryptography-shell`.assembly().path}",
+      s"-De2e.jar.jobs=${`09-jobs-shell`.assembly().path}",
+      s"-De2e.jar.conversation=${`10-conversation-shell`.assembly().path}",
+      s"-De2e.jar.bindings=${`11-bindings-shell`.assembly().path}",
     )
   }

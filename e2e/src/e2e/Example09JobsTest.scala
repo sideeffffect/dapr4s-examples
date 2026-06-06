@@ -1,6 +1,6 @@
 package e2e
 
-class Example11JobsTest extends E2ESuite:
+class Example09JobsTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(60, "s")
 

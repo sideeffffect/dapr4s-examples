@@ -1,6 +1,6 @@
 package e2e
 
-class Example12ConversationTest extends E2ESuite:
+class Example10ConversationTest extends E2ESuite:
 
   val infra = OneShotInfra("e2e-conversation")
   override def munitFixtures = List(infra)

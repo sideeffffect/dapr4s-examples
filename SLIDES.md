@@ -50,7 +50,7 @@ style: |
 2. **Dapr** — the sidecar that absorbs the hard parts
 3. **Safe Scala** — capture checking, capabilities, safe mode
 4. **dapr4s** — design: pure core + impure shell
-5. **Ten worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows, cryptography, jobs, conversation
+5. **Eleven worked examples** — state, secrets, pub/sub, invocation, locks, actors, workflows, cryptography, jobs, conversation, bindings
    - plus **two real-world case studies** — Grafana scan pipeline, ZEISS order saga
 6. **The payoff** — what the compiler now guarantees
 7. **Trade-offs, status, and where this goes next
@@ -554,7 +554,7 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 <!-- _class: section-break -->
 
 # Part 5
-## Ten worked examples
+## Eleven worked examples
 
 ---
 
@@ -569,12 +569,13 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 | 5 | Distributed lock | exclusive capability ⇒ try/unlock pairing |
 | 6 | Virtual actors | per-invocation `ActorContext` |
 | 7 | Durable workflows | `Task[O]` can't be awaited outside the run |
-| 10 | Cryptography | encrypt/decrypt scoped to a `CryptoCapability` |
-| 11 | Jobs | schedule client + `JobRoute` handler, two halves |
-| 12 | Conversation | alpha1 + alpha2 on one capability |
+| 8 | Cryptography | encrypt/decrypt scoped to a `CryptoCapability` |
+| 9 | Jobs | schedule client + `JobRoute` handler, two halves |
+| 10 | Conversation | alpha1 + alpha2 on one capability |
+| 11 | Bindings | output + input on one bidirectional connector |
 
-Each is a `pure` + `shell` module pair you can `dapr run`. Examples **8** and
-**9** are the two real-world case studies later in the deck (Grafana scan
+Each is a `pure` + `shell` module pair you can `dapr run`. Examples **12** and
+**13** are the two real-world case studies that close the deck (Grafana scan
 pipeline, ZEISS order saga).
 
 ---
@@ -865,7 +866,7 @@ no longer be deterministic. The `Task` lives and dies inside the run.
 
 ---
 
-## 10 · Cryptography — wrap/unwrap inside a scope
+## 8 · Cryptography — wrap/unwrap inside a scope
 
 ```scala
 object CryptographyDemoApp:
@@ -885,7 +886,7 @@ ciphertext, so it needs only the bytes.
 
 ---
 
-## 11 · Jobs — schedule now, fire later (both halves)
+## 9 · Jobs — schedule now, fire later (both halves)
 
 ```scala
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
@@ -906,7 +907,7 @@ typed route. Both lambdas capture their capability from the enclosing scope.
 
 ---
 
-## 12 · Conversation — a multi-message exchange
+## 10 · Conversation — a multi-message exchange
 
 ```scala
 object ConversationDemoApp:
@@ -923,6 +924,70 @@ object ConversationDemoApp:
 `converse` takes typed `ConversationMessage`s (roles, optional tool calls) and
 returns choices + token usage. The `echo` component echoes each prompt back, so
 the demo is deterministic with no real LLM provider.
+
+---
+
+## 11 · Bindings — output & input, one bidirectional connector
+
+```mermaid
+flowchart LR
+  Client(["caller"])
+  subgraph App["BindingsExampleApp — pure, capture-checked"]
+    CRE["InvocationRoute<br/>/create"]
+    ENQ["InvocationRoute<br/>/enqueue"]
+    BR["BindingRoute<br/>(orders-queue)"]
+  end
+  Sidecar["Dapr sidecar"]
+  Kafka[("Kafka<br/>orders-queue")]
+  Http["jsonplaceholder<br/>HTTP API"]
+  State[("state store")]
+
+  Client --> CRE
+  Client --> ENQ
+  CRE -->|"OUTPUT invoke POST /posts"| Sidecar
+  ENQ -->|"OUTPUT invokeOneWay"| Sidecar
+  Sidecar -->|produce| Kafka
+  Sidecar -->|"POST /posts"| Http
+  Kafka -->|"INPUT consume"| Sidecar
+  Sidecar -->|"POST /orders-queue"| BR
+  BR -->|"OUTPUT invoke GET /posts/N"| Sidecar
+  Sidecar -->|"GET /posts/N"| Http
+  BR -->|"save"| Sidecar
+  Sidecar --> State
+  classDef ext fill:#ffe0b2,stroke:#e65100,color:#1a1a2e;
+  classDef app fill:#d7e8ff,stroke:#16213e,color:#1a1a2e;
+  class Kafka,Http,State ext
+  class CRE,ENQ,BR app
+```
+
+**Output** = `BindingsCapability` (you call it); **input** = a `BindingRoute` (it
+calls you). The same Kafka `orders-queue` binding is *both*: `/enqueue` produces a
+message, the sidecar delivers it back to the `BindingRoute`, which then uses the
+HTTP binding to fetch the post and persist it. Two bindings share one type, so
+they're plain `val`s (not `given`s) — no ambiguous implicit.
+
+---
+
+## 11 · Bindings — the code
+
+```scala
+val ordersQueue     = cap.binding(OrdersQueue)      // Kafka — bidirectional
+val jsonPlaceholder = cap.binding(JsonPlaceholder)  // HTTP  — output (jsonplaceholder.typicode.com)
+
+DaprCapability.state(StateStore):
+  DaprApp(
+    invocations = List(
+      InvocationRoute[PostRef, String](MethodName("enqueue")): ref =>
+        ordersQueue.invokeOneWay(BindingOperation("create"), ref)       // OUTPUT → Kafka
+        s"enqueued post ${ref.postId}",
+    ),
+    bindings = List(                                                     // INPUT ← Kafka
+      BindingRoute[PostRef](OrdersQueue): ref =>
+        jsonPlaceholder.invoke(BindingOperation("get"), "", pathMeta(s"/posts/${ref.postId}"))[Post]  // OUTPUT → HTTP
+          .foreach(post => StateCapability.save(postKey(post.id), post)),
+    ),
+  )
+```
 
 ---
 
@@ -976,7 +1041,7 @@ Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
 <!-- _class: section-break -->
 
 # Case study 1
-## Grafana — vulnerability scan pipeline
+## 12 · Grafana — vulnerability scan pipeline
 
 ---
 
@@ -1000,7 +1065,7 @@ flowchart LR
   class GW,W,RES svc; class PS,PS2,ST,DLQ infra;
 ```
 
-Three modules — `08-scan-gateway`, `08-scan-worker`, `08-scan-results` — plus a
+Three modules — `12-scan-gateway`, `12-scan-worker`, `12-scan-results` — plus a
 shell each. The fan-out (one topic, many workers) is **Dapr config, not code**.
 
 ---
@@ -1138,7 +1203,7 @@ makes the at-least-once contract impossible to get wrong by accident.
 <!-- _class: section-break -->
 
 # Case study 2
-## ZEISS — order fulfillment saga
+## 13 · ZEISS — order fulfillment saga
 
 ---
 
@@ -1163,8 +1228,8 @@ flowchart LR
   class INV,PAY,SHIP svc; class WF orch; class ST infra;
 ```
 
-Four modules — `09-order-service` (the saga) plus `09-inventory-service`,
-`09-payment-service`, `09-shipping-service`. They agree by **JSON on the wire**;
+Four modules — `13-order-service` (the saga) plus `13-inventory-service`,
+`13-payment-service`, `13-shipping-service`. They agree by **JSON on the wire**;
 each owns its own copy of the contract.
 
 ---
@@ -1210,7 +1275,7 @@ class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult
         ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
 ```
 
-The **pure** `09-order-service` module holds the entire saga — DTOs, activities,
+The **pure** `13-order-service` module holds the entire saga — DTOs, activities,
 the orchestration, and the workflow-client driver. The **shell** keeps only what
 safe mode genuinely rejects: the upickle codec derivations and the `@main` entry
 points.
@@ -1367,33 +1432,6 @@ plain control flow, effects tracked by `^` captures instead of a monad.
   your data model; no type system makes that go away (as the *Tar Pit* critics note)
 
 > The *direction* — effects the compiler can prove — is the durable idea here.
-
----
-
-## 13 · Bindings — both directions, one app
-
-```scala
-val ordersQueue     = cap.binding(OrdersQueue)      // Kafka  — bidirectional
-val jsonPlaceholder = cap.binding(JsonPlaceholder)  // HTTP   — output (jsonplaceholder.typicode.com)
-
-DaprCapability.state(StateStore):
-  DaprApp(
-    invocations = List(
-      InvocationRoute[PostRef, String](MethodName("enqueue")): ref =>
-        ordersQueue.invokeOneWay(BindingOperation("create"), ref)       // OUTPUT → Kafka
-        s"enqueued post ${ref.postId}",
-    ),
-    bindings = List(                                                     // INPUT ← Kafka
-      BindingRoute[PostRef](OrdersQueue): ref =>
-        jsonPlaceholder.invoke(BindingOperation("get"), "", pathMeta(s"/posts/${ref.postId}"))[Post]  // OUTPUT → HTTP
-          .foreach(post => StateCapability.save(postKey(post.id), post)),
-    ),
-  )
-```
-
-**Output** = `BindingsCapability` (you call it); **input** = a `BindingRoute` (it calls
-you). The same Kafka binding is both. Two bindings share one type, so they're plain
-`val`s (not `given`s) — no ambiguous implicit.
 
 ---
 

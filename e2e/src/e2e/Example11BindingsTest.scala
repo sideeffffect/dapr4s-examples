@@ -1,19 +1,19 @@
 package e2e
 
-class Example13BindingsTest extends E2ESuite:
+class Example11BindingsTest extends E2ESuite:
 
   override val munitTimeout = scala.concurrent.duration.Duration(120, "s")
 
-  // The Kafka binding lives in components/13-bindings/ (kept out of the shared
+  // The Kafka binding lives in components/11-bindings/ (kept out of the shared
   // components/ dir so other examples' daprd don't dial Kafka). Injected only for
   // this fixture; the broker is reached by its compose service name (localhost:9092
   // → kafka:9092).
   private def kafkaComponent: String =
-    os.read(Harness.ProjectRoot / "components" / "13-bindings" / "orders-queue.yaml")
+    os.read(Harness.ProjectRoot / "components" / "11-bindings" / "orders-queue.yaml")
       .replace("localhost:9092", "kafka:9092")
 
   // The runnable example calls the real jsonplaceholder.typicode.com; the E2E points
-  // the same binding at the in-network WireMock stub (docker-compose.13-bindings.yml)
+  // the same binding at the in-network WireMock stub (docker-compose.11-bindings.yml)
   // so CI never depends on — or hammers — a third-party endpoint.
   private val jsonPlaceholderStub =
     """apiVersion: dapr.io/v1alpha1
@@ -34,7 +34,7 @@ class Example13BindingsTest extends E2ESuite:
     appId = "e2e-bindings",
     jarModule = "bindings",
     mainClass = "bindings.bindingsApp",
-    composeFileName = "docker-compose.13-bindings.yml",
+    composeFileName = "docker-compose.11-bindings.yml",
     extraComponents = Map(
       "orders-queue.yaml" -> kafkaComponent,
       "jsonplaceholder.yaml" -> jsonPlaceholderStub,

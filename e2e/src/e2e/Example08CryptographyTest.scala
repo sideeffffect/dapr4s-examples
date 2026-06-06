@@ -3,7 +3,7 @@ package e2e
 import java.security.KeyPairGenerator
 import java.util.Base64
 
-class Example10CryptographyTest extends E2ESuite:
+class Example08CryptographyTest extends E2ESuite:
 
   // The crypto component is injected only for this fixture (other examples don't
   // mount /keys, so it can't live in the shared components/ dir).
@@ -37,7 +37,7 @@ class Example10CryptographyTest extends E2ESuite:
 
   val infra = OneShotInfra(
     appId = "e2e-crypto",
-    composeFileName = "docker-compose.10-crypto.yml",
+    composeFileName = "docker-compose.08-crypto.yml",
     extraComponents = Map("cryptostore.yaml" -> cryptoComponent),
     extraEnv = () => Map("CRYPTO_KEYS_PATH" -> generateKeysDir().toString),
   )

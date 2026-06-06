@@ -10,11 +10,11 @@ package e2e
   * Covers the three resiliency concerns the example demonstrates: fan-out + aggregation, idempotent dedup of a
   * redelivered scanId, and retry of a transient ("flaky") failure until it eventually succeeds.
   */
-class Example08ScanPipelineTest extends E2ESuite:
+class Example12ScanPipelineTest extends E2ESuite:
   override val munitTimeout = scala.concurrent.duration.Duration(180, "s")
 
   val infra = MultiServerInfra(
-    composeFileName = "docker-compose.08-scan.yml",
+    composeFileName = "docker-compose.12-scan.yml",
     jars = Map(
       "JAR_GATEWAY" -> "scan-gateway",
       "JAR_WORKER" -> "scan-worker",
