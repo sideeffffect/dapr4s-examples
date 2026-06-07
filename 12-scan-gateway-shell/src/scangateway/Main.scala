@@ -39,7 +39,7 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
     GatewayApp()
 
 @main def scanSeed(): Unit =
-  println("=== 08 scan-pipeline: seeding ScanRequested ===\n")
+  println("=== 08 scan-pipeline: seeding scanRequested ===\n")
   Dapr(daprConfigFromEnv(defaultAppPort = 8088)).run:
     val ids = runSeed()
     ids.foreach(id => println(s"published: $id"))

@@ -31,9 +31,9 @@ test tearing down mid-talk.
 Two dapr4s services (pure core + impure shell each), continuously driven:
 
 - **`14-orders`** — workflow service. `OrderWorkflow` orchestrates activities:
-  `ReserveInventory` → an activity that **invokes the pricing service** (service
-  invocation) → `ChargePayment` → `DispatchShipment`. On completion the app
-  **publishes** an `OrderCompleted` event to pub/sub and **subscribes** to that
+  `reserveInventory` → an activity that **invokes the pricing service** (service
+  invocation) → `chargePayment` → `dispatchShipment`. On completion the app
+  **publishes** an `orderCompleted` event to pub/sub and **subscribes** to that
   topic with an audit handler. Inputs vary so outcomes split across
   shipped / out-of-stock / payment-declined → varied span trees.
 - **`14-pricing`** — service-invocation callee. A `quote` route returns a price for

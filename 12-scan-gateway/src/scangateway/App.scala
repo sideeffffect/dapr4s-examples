@@ -6,7 +6,7 @@ import dapr4s.derivation.*
 // ── 08 · Grafana-style scan pipeline — gateway service ────────────────────────
 // The gateway is the ingestion edge of the vulnerability-scanning pipeline.
 // It exposes a `submit` invocation route (callers POST an image to scan) and
-// publishes each request onto the `ScanRequested` topic for the worker fleet.
+// publishes each request onto the `scanRequested` topic for the worker fleet.
 //
 // Fully derived: the publisher and the invocation route are both generated from
 // trait/object descriptions — no reified `PubSubCapability.publish`, no
@@ -18,15 +18,15 @@ val PubSubComponent = PubSubName("pubsub")
 case class ScanRequest(scanId: String, image: String, source: String)
 case class SubmitResponse(accepted: Boolean, scanId: String)
 
-// Derived publisher: method name (PascalCase, verbatim) → Topic.
+// Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def ScanRequested(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
+  def scanRequested(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
 lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
 // Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
 object GatewayRoutes:
   def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-    ScanTopics.ScanRequested(req)
+    ScanTopics.scanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
@@ -51,5 +51,5 @@ def runSeed()(using DaprCapability, JsonCodec[ScanRequest]): List[String] =
   DaprCapability.pubsub(PubSubComponent):
     val topics = ScanTopics
     seedRequests.map: req =>
-      topics.ScanRequested(req)
+      topics.scanRequested(req)
       s"${req.scanId} (${req.source})"

@@ -239,13 +239,13 @@ dapr run --app-id workflow-driver \
 Real-world case study: a Grafana-style, event-driven vulnerability scanner built as a
 fan-out pub/sub pipeline across three services (each with its own `-shell`):
 
-- **scan-gateway** — accepts submissions and publishes to the `ScanRequested` topic
+- **scan-gateway** — accepts submissions and publishes to the `scanRequested` topic
   (`scanGateway` server; `scanSeed` is a one-shot publisher).
-- **scan-worker** — subscribes to `ScanRequested`, runs the (stubbed) scan, and publishes
-  to `ScanCompleted`. A request that keeps failing past the sidecar's retry policy is
-  routed to the real dead-letter topic (`ScanDeadLetter`).
-- **scan-results** — subscribes to `ScanCompleted` (folding results into a running
-  dashboard) and to the dead-letter topic `ScanDeadLetter` (counting failed requests).
+- **scan-worker** — subscribes to `scanRequested`, runs the (stubbed) scan, and publishes
+  to `scanCompleted`. A request that keeps failing past the sidecar's retry policy is
+  routed to the real dead-letter topic (`scanDeadLetter`).
+- **scan-results** — subscribes to `scanCompleted` (folding results into a running
+  dashboard) and to the dead-letter topic `scanDeadLetter` (counting failed requests).
 
 ```
 # Terminal 1 — results dashboard

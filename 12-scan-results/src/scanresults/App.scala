@@ -4,7 +4,7 @@ import dapr4s.*
 import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — results service ────────────────────────
-// Subscribes to `ScanCompleted`, folds each result into a running dashboard
+// Subscribes to `scanCompleted`, folds each result into a running dashboard
 // aggregate in the state store, and exposes a `dashboard` invocation route so a
 // UI (or the demo driver) can read the current totals.  This is the read side
 // of the pipeline — the part that fed Grafana dashboards in the real system.
@@ -20,14 +20,14 @@ case class ScanRequest(scanId: String, image: String, source: String)
 case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int, deadLetters: Int)
 
 // Fold one result into the aggregate under optimistic concurrency: concurrent
-// ScanCompleted events would otherwise read-modify-write the same key and lose
+// scanCompleted events would otherwise read-modify-write the same key and lose
 // updates. We compare-and-swap on the ETag and retry on conflict. The aggregate
 // is seeded once at startup (see `ResultsApp`) so every update has an ETag.
-// Derived subscriptions: each method name (PascalCase, verbatim) → Topic. The handler bodies keep
+// Derived subscriptions: each method name (camelCase, verbatim) → Topic. The handler bodies keep
 // the explicit getWithETag/saveWithETag compare-and-swap — optimistic-concurrency logic has no
 // derived form, so only the subscription wiring is derived.
 object ResultSubscriptions:
-  def ScanCompleted(event: CloudEvent[ScanResult])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+  def scanCompleted(event: CloudEvent[ScanResult])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
     val r = event.data
     updateDashboard(d =>
       d.copy(
@@ -39,7 +39,7 @@ object ResultSubscriptions:
     SubscriptionResult.Success
 
   // Dead-lettered scan requests land here after the worker's retry policy is exhausted.
-  def ScanDeadLetter(event: CloudEvent[ScanRequest])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+  def scanDeadLetter(event: CloudEvent[ScanRequest])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
     updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
     SubscriptionResult.Success
 

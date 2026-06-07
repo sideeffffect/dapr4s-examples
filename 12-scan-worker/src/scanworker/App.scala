@@ -4,8 +4,8 @@ import dapr4s.*
 import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — worker service ─────────────────────────
-// Subscribes to `ScanRequested`, runs the (stubbed) image scan, and publishes
-// findings to `ScanCompleted`.  It demonstrates the three resiliency concerns
+// Subscribes to `scanRequested`, runs the (stubbed) image scan, and publishes
+// findings to `scanCompleted`.  It demonstrates the three resiliency concerns
 // the real Grafana pipeline relies on Dapr for:
 //
 //   • Idempotency  — pub/sub is at-least-once, so a `seen-<scanId>` marker in the
@@ -38,17 +38,17 @@ def scan(req: ScanRequest): ScanResult =
     else Nil
   ScanResult(req.scanId, req.image, findings, status = "scanned")
 
-// Derived publisher: method name (PascalCase, verbatim) → Topic.
+// Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def ScanCompleted(r: ScanResult)(using PubSubCapability, JsonCodec[ScanResult]): Unit
+  def scanCompleted(r: ScanResult)(using PubSubCapability, JsonCodec[ScanResult]): Unit
 lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
-// Derived subscription: method name (PascalCase, verbatim) → Topic, @deadLetter → dead-letter topic.
+// Derived subscription: method name (camelCase, verbatim) → Topic, @deadLetter → dead-letter topic.
 // The handler body keeps the explicit StateCapability calls — idempotency/retry logic over *dynamic*
 // keys (seen-/attempt-<scanId>) has no derived form; only the wiring is derived.
 object WorkerRoutes:
-  @deadLetter("ScanDeadLetter")
-  def ScanRequested(event: CloudEvent[ScanRequest])(using
+  @deadLetter("scanDeadLetter")
+  def scanRequested(event: CloudEvent[ScanRequest])(using
       StateCapability,
       PubSubCapability,
       JsonCodec[SeenMarker],
@@ -63,7 +63,7 @@ object WorkerRoutes:
       StateCapability.save(attemptKey(req.scanId), attempts + 1)
       if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry
       else
-        ScanTopics.ScanCompleted(scan(req))
+        ScanTopics.scanCompleted(scan(req))
         StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
         SubscriptionResult.Success
 

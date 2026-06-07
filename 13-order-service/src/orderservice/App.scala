@@ -63,8 +63,12 @@ trait ShippingClient:
   ): ShipmentResult
 def ShippingClient(appId: AppId): ShippingClient = ServiceInvocation.derive[ShippingClient](appId)
 
-// Derived workflow starter: the method name maps verbatim to the WorkflowName (the workflow's
-// registered name is its class name, already PascalCase — so no `@name` override).
+// Derived workflow starter: the method name maps verbatim to the WorkflowName. Unlike the
+// pub/sub topics and invocation routes — whose names are ours to choose, so they follow the
+// usual lower-first method convention — a workflow's registered name is its *class* name
+// (`registerWorkflow(getClass.getSimpleName)`), which is necessarily PascalCase. The starter
+// method must match it verbatim, so PascalCase here is forced, not a style choice (the only
+// alternative being a redundant `@name("OrderProcessingWorkflow")` override).
 trait OrderWorkflows:
   def OrderProcessingWorkflow(input: OrderRequest)(using WorkflowCapability, JsonCodec[OrderRequest]): WorkflowInstanceId
 lazy val OrderWorkflows: OrderWorkflows = Workflow.derive[OrderWorkflows]

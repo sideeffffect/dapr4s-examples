@@ -6,8 +6,8 @@ import dapr4s.derivation.*
 // ── 14 · Observability — orders service (workflow + invocation + pub/sub) ──────
 // The headline workload for the observability demo. One OrderWorkflow weaves
 // together three building blocks so a single trace tree spans them all:
-//   workflow → activities → (QuotePrice invokes the pricing service) → publishes
-//   an OrderCompleted event → an audit subscription consumes it.
+//   workflow → activities → (quotePrice invokes the pricing service) → publishes
+//   an orderCompleted event → an audit subscription consumes it.
 // Workflow instances are visible in the Diagrid dashboard (Redis actor store);
 // the full span tree, Dapr metrics, and app/sidecar logs land in SigNoz.
 //
@@ -39,7 +39,7 @@ trait PricingClient:
 def PricingClient(appId: AppId): PricingClient = ServiceInvocation.derive[PricingClient](appId)
 
 trait OrderTopics:
-  def OrderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
+  def orderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
 lazy val OrderTopics: OrderTopics = PubSub.derive[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ class OrderActivities:
   // consumes it, adding a publish + deliver span to the trace.
   def publishOrderEvent(event: OrderEvent)(using DaprCapability, JsonCodec[OrderEvent]): Unit =
     DaprCapability.pubsub(PubSubComponent):
-      OrderTopics.OrderCompleted(event)
+      OrderTopics.orderCompleted(event)
 
 // Typed caller the workflow schedules activities through (derived from OrderActivities;
 // each call forwards to WorkflowContext under the activity's name). The returned Task
@@ -122,9 +122,9 @@ class OrderWorkflow(using
 // handler stays pure (no println — that is @rejectSafe under safe mode); the
 // log signal in the telemetry comes from the app and daprd stdout instead.
 
-// Derived subscription: method name (PascalCase, verbatim) → Topic.
+// Derived subscription: method name (camelCase, verbatim) → Topic.
 object OrderSubscriptions:
-  def OrderCompleted(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
+  def orderCompleted(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
     val _ = event.data
     SubscriptionResult.Success
 
