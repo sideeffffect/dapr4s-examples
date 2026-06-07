@@ -208,12 +208,29 @@ final class ObservabilityInfra(presentation: Boolean) extends Fixture[Nothing]("
       c.withEnv("ORDERS_DAPR_HOST", "3500")
       c.withEnv("ORDERS_METRICS_HOST", "9090")
       c.withEnv("COLLECTOR_HOST", "8888")
+    val long = Duration.ofMinutes(8)
+    // `orders` is a normal JVM image (has a shell), so the default port-listening wait
+    // is fine. The other three are distroless (no /bin/sh): the default wait's internal
+    // probe execs a shell inside the container and fails noisily — so wait on an
+    // external HTTP endpoint instead, which never execs into the container.
+    val httpUp: java.util.function.Predicate[Integer] = (code: Integer) => code.intValue() < 500
     c.withExposedService("orders", 3500)
     c.withExposedService("orders", 9090)
-    c.withExposedService("signoz", 8080)
-    c.withExposedService("diagrid-dashboard", 8080)
-    c.withExposedService("otel-collector", 8888)
-    val long = Duration.ofMinutes(8)
+    c.withExposedService(
+      "signoz",
+      8080,
+      Wait.forHttp("/api/v1/health").forPort(8080).forStatusCodeMatching(httpUp).withStartupTimeout(long),
+    )
+    c.withExposedService(
+      "diagrid-dashboard",
+      8080,
+      Wait.forHttp("/").forPort(8080).forStatusCodeMatching(httpUp).withStartupTimeout(long),
+    )
+    c.withExposedService(
+      "otel-collector",
+      8888,
+      Wait.forHttp("/metrics").forPort(8888).forStatusCodeMatching(httpUp).withStartupTimeout(long),
+    )
     c.waitingFor("orders-dapr", Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(long))
     c.waitingFor("pricing-dapr", Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(long))
     c.waitingFor("signoz", Wait.forHealthcheck().withStartupTimeout(long))

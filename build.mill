@@ -262,12 +262,5 @@ object e2e extends BaseModule with TestModule.Munit:
   // `./mill … .assembly` first — e.g. the observability leg builds only
   // `14-orders-shell` + `14-pricing-shell`. See .github/workflows/e2e.yml.
   override def forkArgs: T[Seq[String]] = Task {
-    Seq(
-      s"-De2e.projectRoot=${workspaceRoot}",
-      // Silence Testcontainers' internal port-listening probe. It WARNs for our
-      // shell-less (distroless) images — the OTel collector, SigNoz, Diagrid — where
-      // it can't exec /bin/sh; it harmlessly falls back to the external host-port
-      // check, so the noise is cosmetic.
-      "-Dorg.slf4j.simpleLogger.log.org.testcontainers.containers.wait.internal.InternalCommandPortListeningCheck=off",
-    )
+    Seq(s"-De2e.projectRoot=${workspaceRoot}")
   }
