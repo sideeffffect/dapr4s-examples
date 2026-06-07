@@ -97,11 +97,11 @@ trait CounterClient:
   def get()(using ActorCapability, JsonCodec[CounterState]): CounterState
   def increment(by: IncrBy)(using ActorCapability, JsonCodec[IncrBy], JsonCodec[CounterState]): CounterState
   def startTimer()(using ActorCapability, JsonCodec[CounterState]): CounterState
-object CounterClient extends Actor.Derived[CounterClient]
+lazy val CounterClient: CounterClient = Actor.derive[CounterClient]
 
 def driverGetState(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.derive.get()
+    CounterClient.get()
 
 def driverIncrement(id: ActorId, by: IncrBy)(using
     DaprCapability,
@@ -109,8 +109,8 @@ def driverIncrement(id: ActorId, by: IncrBy)(using
     JsonCodec[CounterState],
 ): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.derive.increment(by)
+    CounterClient.increment(by)
 
 def driverStartTimer(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.derive.startTimer()
+    CounterClient.startTimer()

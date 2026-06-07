@@ -21,12 +21,12 @@ case class SubmitResponse(accepted: Boolean, scanId: String)
 // Derived publisher: method name (PascalCase, verbatim) → Topic.
 trait ScanTopics:
   def ScanRequested(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
-object ScanTopics extends PubSub.Derived[ScanTopics]
+lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
 // Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
 object GatewayRoutes:
   def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-    ScanTopics.derive.ScanRequested(req)
+    ScanTopics.ScanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
@@ -49,7 +49,7 @@ def seedRequests: List[ScanRequest] =
 
 def runSeed()(using DaprCapability, JsonCodec[ScanRequest]): List[String] =
   DaprCapability.pubsub(PubSubComponent):
-    val topics = ScanTopics.derive
+    val topics = ScanTopics
     seedRequests.map: req =>
       topics.ScanRequested(req)
       s"${req.scanId} (${req.source})"

@@ -29,12 +29,12 @@ case class CryptoResult(
 trait RsaCipher:
   def RsaKey(plaintext: String, algorithm: KeyWrapAlgorithm)(using CryptoCapability): ArraySeq[Byte]
   def RsaKey(plaintext: ArraySeq[Byte], algorithm: KeyWrapAlgorithm)(using CryptoCapability): ArraySeq[Byte]
-object RsaCipher extends Crypto.Derived[RsaCipher]
+lazy val RsaCipher: RsaCipher = Crypto.derive[RsaCipher]
 
 object CryptographyDemoApp:
   def apply()(using DaprCapability): CryptoResult =
     DaprCapability.crypto(CryptoComponent):
-      val cipher5 = RsaCipher.derive
+      val cipher5 = RsaCipher
       val plaintext = "the quick brown fox"
       val cipher = cipher5.RsaKey(plaintext, KeyWrapAlgorithm.Rsa)
       val decrypted = CryptoCapability.decryptString(cipher)

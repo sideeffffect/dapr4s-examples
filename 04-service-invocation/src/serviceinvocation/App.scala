@@ -70,7 +70,7 @@ trait GreetingService:
       JsonCodec[GreetResponse],
   ): GreetResponse
   def stats()(using ServiceInvocationCapability, JsonCodec[StatsResponse]): StatsResponse
-object GreetingService extends ServiceInvocation.Derived[GreetingService]
+def GreetingService(appId: AppId): GreetingService = ServiceInvocation.derive[GreetingService](appId)
 
 object CallerApp:
   def apply()(using
@@ -80,7 +80,7 @@ object CallerApp:
       JsonCodec[StatsResponse],
   ): CallerResult =
     DaprCapability.invoker:
-      val svc = GreetingService.derive(AppId("greeting-service"))
+      val svc = GreetingService(AppId("greeting-service"))
       val requests = List(
         GreetRequest("Alice", "en"),
         GreetRequest("Bob", "es"),

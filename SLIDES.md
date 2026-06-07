@@ -1167,11 +1167,11 @@ no `InvocationRoute[...]` list.
 ```scala
 trait ScanTopics:                                              // method name (verbatim) → Topic
   def ScanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
-object ScanTopics extends PubSub.Derived[ScanTopics]
+lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
 object GatewayRoutes:                                          // method → InvocationRoute
   def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-    ScanTopics.derive.ScanRequested(req)
+    ScanTopics.ScanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
@@ -1316,7 +1316,7 @@ name maps to the callee's `InvocationMethodName`, so no `ServiceInvocationCapabi
 trait InventoryClient:
   def reserve(req: ReserveRequest)(using ServiceInvocationCapability,
       JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult
-object InventoryClient extends ServiceInvocation.Derived[InventoryClient]
+def InventoryClient(appId: AppId): InventoryClient = ServiceInvocation.derive[InventoryClient](appId)
 
 class OrderActivities:                                   // just a class — methods, not subclasses
   def reserve(o: OrderRequest)(using DaprCapability,
@@ -1337,11 +1337,11 @@ activities, the orchestration, and the workflow-client driver. The downstream se
 trait OrderActivityCalls:                                // one typed method per activity
   def reserve(o: OrderRequest)(using ctx: WorkflowContext): Task[ReservationResult]^{ctx}
   // … charge, dispatch, release, refund
-object OrderActivityCalls extends WorkflowActivityCalls.Derived[OrderActivityCalls, OrderActivities]
+// codecs are summoned where derive runs, so derive inside the workflow (codecs in scope there)
 
 class OrderProcessingWorkflow extends Workflow:
   def run(using WorkflowContext): Unit =
-    val acts  = OrderActivityCalls.derive
+    val acts  = WorkflowActivityCalls.derive[OrderActivityCalls, OrderActivities]
     val order = WorkflowContext.getInput[OrderRequest].getOrElse(throw RuntimeException("no input"))
     val reservation = acts.reserve(order).await()
     if !reservation.reserved then WorkflowContext.complete(OrderResult(false, "out of stock"))
@@ -1516,9 +1516,9 @@ ServiceInvocationCapability
 trait GreetingService:
   def greet(req: GreetRequest)(using ServiceInvocationCapability,
       JsonCodec[GreetRequest], JsonCodec[GreetResponse]): GreetResponse
-object GreetingService extends ServiceInvocation.Derived[GreetingService]
+def GreetingService(appId: AppId): GreetingService = ServiceInvocation.derive[GreetingService](appId)
 
-val svc = GreetingService.derive(AppId("greeting-service"))
+val svc = GreetingService(AppId("greeting-service"))
 svc.greet(req)            // method name → InvocationMethodName; types preserved
 ```
 
@@ -1554,9 +1554,9 @@ val defn = ActorDefinitions.derive[CounterActor]  // server side: a whole actor 
   runtime layer, the same `^{…}` capture-checking, codecs still passed in from the shell.
 - The capability arrives **per call** (capture checking forbids capturing an
   `ExclusiveCapability`) — so derivation **can't hide effects**; the wiring is generated, not the effect.
-- `X.Derived[T]` is an `inline` mixin giving `MyService.derive`. A *macro-annotation* form
-  was tried and dropped — Scala 3 annotations expand after the typer, so generated members
-  are invisible in the same compilation run.
+- A plain `X.derive[T]` factory next to the trait (`lazy val`, or a `def` taking `appId` for
+  service invocation) is all you need. A *macro-annotation* form was tried and dropped — Scala 3
+  annotations expand after the typer, so generated members are invisible in the same compilation run.
 
 > The explicit reified API stays the foundation; derivation is an opt-in convenience on top.
 

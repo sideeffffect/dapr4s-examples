@@ -33,10 +33,10 @@ object SubscriberApp:
 // Each method name maps verbatim to its Topic (PascalCase, so no `@name` override).
 trait Topics:
   def HelloTopic(msg: Message)(using PubSubCapability, JsonCodec[Message]): Unit
-object Topics extends PubSub.Derived[Topics]
+lazy val Topics: Topics = PubSub.derive[Topics]
 
 object PublisherApp:
   def apply()(using DaprCapability, JsonCodec[Message]): Unit =
     DaprCapability.pubsub(PubSubComponent):
-      val topics = Topics.derive
+      val topics = Topics
       for i <- 1 to 5 do topics.HelloTopic(Message(from = "publisher", text = "hello world", sequenceNo = i))

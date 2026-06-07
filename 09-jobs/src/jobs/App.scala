@@ -26,11 +26,11 @@ def resultKey: StateStoreKey = StateStoreKey(s"job-result-${DemoJob.value}")
 // selects scheduleOnce.
 trait Scheduler:
   def DemoJob(data: String, dueTime: java.time.Instant)(using JobsCapability, JsonCodec[String]): Unit
-object Scheduler extends Jobs.Derived[Scheduler]
+lazy val Scheduler: Scheduler = Jobs.derive[Scheduler]
 
 // Schedule DemoJob to fire two seconds from now, carrying `payload`.
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
-  Scheduler.derive.DemoJob(payload, java.time.Instant.now().plusSeconds(2))
+  Scheduler.DemoJob(payload, java.time.Instant.now().plusSeconds(2))
   payload
 
 // Invoked by the sidecar when DemoJob fires; records the payload for inspection.

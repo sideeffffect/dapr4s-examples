@@ -41,7 +41,7 @@ def scan(req: ScanRequest): ScanResult =
 // Derived publisher: method name (PascalCase, verbatim) → Topic.
 trait ScanTopics:
   def ScanCompleted(r: ScanResult)(using PubSubCapability, JsonCodec[ScanResult]): Unit
-object ScanTopics extends PubSub.Derived[ScanTopics]
+lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
 // Derived subscription: method name (PascalCase, verbatim) → Topic, @deadLetter → dead-letter topic.
 // The handler body keeps the explicit StateCapability calls — idempotency/retry logic over *dynamic*
@@ -63,7 +63,7 @@ object WorkerRoutes:
       StateCapability.save(attemptKey(req.scanId), attempts + 1)
       if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry
       else
-        ScanTopics.derive.ScanCompleted(scan(req))
+        ScanTopics.ScanCompleted(scan(req))
         StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
         SubscriptionResult.Success
 

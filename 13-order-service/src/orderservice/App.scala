@@ -44,7 +44,7 @@ trait InventoryClient:
       JsonCodec[ReservationResult],
   ): ReservationResult
   def release(req: ReleaseRequest)(using ServiceInvocationCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit
-object InventoryClient extends ServiceInvocation.Derived[InventoryClient]
+def InventoryClient(appId: AppId): InventoryClient = ServiceInvocation.derive[InventoryClient](appId)
 
 trait PaymentClient:
   def charge(req: ChargeRequest)(using
@@ -53,7 +53,7 @@ trait PaymentClient:
       JsonCodec[PaymentResult],
   ): PaymentResult
   def refund(req: RefundRequest)(using ServiceInvocationCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit
-object PaymentClient extends ServiceInvocation.Derived[PaymentClient]
+def PaymentClient(appId: AppId): PaymentClient = ServiceInvocation.derive[PaymentClient](appId)
 
 trait ShippingClient:
   def dispatch(req: ShipRequest)(using
@@ -61,13 +61,13 @@ trait ShippingClient:
       JsonCodec[ShipRequest],
       JsonCodec[ShipmentResult],
   ): ShipmentResult
-object ShippingClient extends ServiceInvocation.Derived[ShippingClient]
+def ShippingClient(appId: AppId): ShippingClient = ServiceInvocation.derive[ShippingClient](appId)
 
 // Derived workflow starter: the method name maps verbatim to the WorkflowName (the workflow's
 // registered name is its class name, already PascalCase — so no `@name` override).
 trait OrderWorkflows:
   def OrderProcessingWorkflow(input: OrderRequest)(using WorkflowCapability, JsonCodec[OrderRequest]): WorkflowInstanceId
-object OrderWorkflows extends Workflow.Derived[OrderWorkflows]
+lazy val OrderWorkflows: OrderWorkflows = Workflow.derive[OrderWorkflows]
 
 // Sample orders that exercise each saga outcome: success, out-of-stock,
 // payment-declined, and dispatch-failure (which triggers full compensation).
@@ -88,7 +88,7 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
     JsonCodec[OrderRequest],
     JsonCodec[OrderResult],
 ): ProcessOrderResult =
-  val id = OrderWorkflows.derive.OrderProcessingWorkflow(order)
+  val id = OrderWorkflows.OrderProcessingWorkflow(order)
   id.waitForCompletion(timeout) match
     case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
     case Some(snap) =>
@@ -120,23 +120,23 @@ class OrderActivities:
   def reserve(o: OrderRequest)(using DaprCapability, JsonCodec[ReserveRequest], JsonCodec[ReservationResult])
       : ReservationResult =
     DaprCapability.invoker:
-      InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
+      InventoryClient(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 
   def charge(o: OrderRequest)(using DaprCapability, JsonCodec[ChargeRequest], JsonCodec[PaymentResult]): PaymentResult =
     DaprCapability.invoker:
-      PaymentClient.derive(PaymentService).charge(ChargeRequest(o.orderId, o.amount))
+      PaymentClient(PaymentService).charge(ChargeRequest(o.orderId, o.amount))
 
   def dispatch(o: OrderRequest)(using DaprCapability, JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): ShipmentResult =
     DaprCapability.invoker:
-      ShippingClient.derive(ShippingService).dispatch(ShipRequest(o.orderId, o.address))
+      ShippingClient(ShippingService).dispatch(ShipRequest(o.orderId, o.address))
 
   def release(req: ReleaseRequest)(using DaprCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit =
     DaprCapability.invoker:
-      InventoryClient.derive(InventoryService).release(req)
+      InventoryClient(InventoryService).release(req)
 
   def refund(req: RefundRequest)(using DaprCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit =
     DaprCapability.invoker:
-      PaymentClient.derive(PaymentService).refund(req)
+      PaymentClient(PaymentService).refund(req)
 
 // Typed caller the saga schedules activities through (derived from OrderActivities;
 // each call forwards to WorkflowContext under the activity's name).
@@ -146,7 +146,6 @@ trait OrderActivityCalls:
   def dispatch(o: OrderRequest)(using ctx: WorkflowContext): Task[ShipmentResult]^{ctx}
   def release(req: ReleaseRequest)(using ctx: WorkflowContext): Task[Unit]^{ctx}
   def refund(req: RefundRequest)(using ctx: WorkflowContext): Task[Unit]^{ctx}
-object OrderActivityCalls extends WorkflowActivityCalls.Derived[OrderActivityCalls, OrderActivities]
 
 // ── Workflow (saga orchestration — deterministic, no I/O of its own) ──────────
 
@@ -161,7 +160,7 @@ class OrderProcessingWorkflow(using
     JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
-    val acts = OrderActivityCalls.derive
+    val acts = WorkflowActivityCalls.derive[OrderActivityCalls, OrderActivities]
     val order = WorkflowContext
       .getInput[OrderRequest]
       .getOrElse:
