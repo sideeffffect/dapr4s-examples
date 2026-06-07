@@ -1158,18 +1158,26 @@ building block** — config or one typed value, not bespoke plumbing.
 
 ---
 
-## The gateway — publish on the edge (pure)
+## The gateway — fully derived (publisher + route)
+
+The last three examples are written in the **derived** style: the publisher and the
+invocation routes are generated from trait/object descriptions — no `PubSubCapability.publish`,
+no `InvocationRoute[...]` list.
 
 ```scala
-def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-  PubSubCapability.publish(ScanRequestedTopic, req)
-  SubmitResponse(accepted = true, req.scanId)
+trait ScanTopics:                                              // method @name → Topic
+  @name("scan-requested") def scanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
+object ScanTopics extends PubSub.Derived[ScanTopics]
+
+object GatewayRoutes:                                          // method → InvocationRoute
+  def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
+    ScanTopics.derive.scanRequested(req)
+    SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
   def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
     DaprCapability.pubsub(PubSubComponent):
-      DaprApp(invocations =
-        List(InvocationRoute[ScanRequest, SubmitResponse](InvocationMethodName("submit"))(submit)))
+      DaprApp(invocations = InvocationRoutes.derive[GatewayRoutes.type])
 ```
 
 A caller `POST`s an image; the gateway publishes it and acks. The seed driver
@@ -1178,37 +1186,37 @@ stands in for the SQS binding — it even publishes a **duplicate** `scan-3` and
 
 ---
 
-## The worker — idempotency, retry, DLQ (pure)
+## The worker — idempotency, retry, DLQ (derived wiring)
+
+The subscription (topic + dead-letter) is **derived** via `@name`/`@deadLetter`; the handler
+body keeps the explicit `StateCapability` calls — dedup/retry over *dynamic* keys
+(`seen-`/`attempt-<scanId>`) is genuine logic with no derived form.
 
 ```scala
-def onScanRequested(event: CloudEvent[ScanRequest])(using
-    StateCapability, PubSubCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
-): SubscriptionResult =
-  val req = event.data
-  if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then
-    SubscriptionResult.Drop                                  // already done — discard
-  else if req.source == "poison" then
-    SubscriptionResult.Retry                                 // never succeeds → sidecar dead-letters it
-  else
-    val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
-    StateCapability.save(attemptKey(req.scanId), attempts + 1)
-    if req.source == "flaky" && attempts == 0 then
-      SubscriptionResult.Retry                               // transient — Dapr retries (Resiliency policy)
+object WorkerRoutes:
+  @name("scan-requested") @deadLetter("scan-dead-letter")
+  def onScanRequested(e: CloudEvent[ScanRequest])(using
+      StateCapability, PubSubCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
+  ): SubscriptionResult =
+    val req = e.data
+    if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then SubscriptionResult.Drop  // done
+    else if req.source == "poison" then SubscriptionResult.Retry           // never succeeds → dead-letter
     else
-      PubSubCapability.publish(ScanCompletedTopic, scan(req))
-      StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
-      SubscriptionResult.Success                             // ack
+      val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
+      StateCapability.save(attemptKey(req.scanId), attempts + 1)
+      if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry          // transient
+      else
+        ScanTopics.derive.scanCompleted(scan(req))                          // derived publish
+        StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
+        SubscriptionResult.Success                                          // ack
 
-// the dead-letter topic is declared on the Subscription, not in the handler:
-Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic,
-                          deadLetterTopic = Some(DeadLetterTopic))(onScanRequested)
+DaprApp(subscriptions = Subscriptions.derive[WorkerRoutes.type](PubSubComponent))
 ```
 
 `Drop` / `Retry` / `Success` are the **only** three answers — the type makes the
-at-least-once contract explicit. A Dapr **Resiliency** policy (`components/resiliency.yaml`
-— config, not Scala) drives redelivery: with the Redis pub/sub component a `Retry` is
-re-invoked **inline** by resiliency. Once a request exhausts the policy's retries the
-sidecar routes it to `deadLetterTopic`, where the results service tallies it.
+at-least-once contract explicit. A Dapr **Resiliency** policy (`components/resiliency.yaml`)
+drives redelivery; once a request exhausts the retries the sidecar routes it to the
+`@deadLetter` topic, where the results service tallies it.
 
 ---
 
@@ -1299,21 +1307,25 @@ hands it in for the duration of the invocation. Nothing is captured into a field
 nothing is **stored** in the long-lived `List[WorkflowActivity]`, so **safe mode
 accepts the activities as-is** — no `@assumeSafe`:
 
+The cross-service call itself is **derived** — a `InventoryClient` trait whose method
+name maps to the callee's `InvocationMethodName`, so no `ServiceInvocationCapability.invoke`:
+
 ```scala
-class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult],
-                            JsonCodec[ReserveRequest])
+trait InventoryClient:
+  def reserve(req: ReserveRequest)(using ServiceInvocationCapability,
+      JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult
+object InventoryClient extends ServiceInvocation.Derived[InventoryClient]
+
+class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult], JsonCodec[ReserveRequest])
     extends WorkflowActivity[OrderRequest, ReservationResult]:
   def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ReserveRequest](
-        InventoryService, InvocationMethodName("reserve"),
-        ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
+      InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 ```
 
-The **pure** `13-order-service` module holds the entire saga — DTOs, activities,
-the orchestration, and the workflow-client driver. The **shell** keeps only what
-safe mode genuinely rejects: the upickle codec derivations and the `@main` entry
-points.
+The **pure** `13-order-service` module holds the entire saga — DTOs, derived clients,
+activities, the orchestration, and the workflow-client driver. The downstream services
+(`reserve`/`charge`/`dispatch`) likewise register their routes with `InvocationRoutes.derive`.
 
 ---
 
@@ -1337,6 +1349,11 @@ The nested `if/else` **is** the state-machine diagram. Each `callActivity` retur
 a `Task[O]` that captures the exclusive `WorkflowContext` (`Task[O]^{ctx}`), so
 capture checking forbids it from escaping `run`. The whole state machine stays
 inside the run — that's what keeps replay deterministic.
+
+> Workflow **hosting** (`extends Workflow` / `WorkflowActivity[I,O]` + `callActivity[A]`) is the
+> one piece with no derived form — the orchestration must name the activity *type*, which a macro
+> can't synthesise-and-reference in one compilation run. Clients, routes, and the `start` call
+> around it are all derived; the orchestration body stays reified by necessity.
 
 ---
 

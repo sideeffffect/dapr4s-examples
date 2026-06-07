@@ -1,6 +1,7 @@
 package orders
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 // ── 14 · Observability — orders service (workflow + invocation + pub/sub) ──────
 // The headline workload for the observability demo. One OrderWorkflow weaves
@@ -27,7 +28,19 @@ case class OrderResult(success: Boolean, message: String)
 
 val PricingService = AppId("pricing")
 val PubSubComponent = PubSubName("pubsub")
-val OrderCompletedTopic = Topic("order-completed")
+
+// Derived cross-service client + publisher (method name / @name → Dapr name).
+trait PricingClient:
+  def quote(req: QuoteRequest)(using
+      ServiceInvocationCapability,
+      JsonCodec[QuoteRequest],
+      JsonCodec[PriceQuote],
+  ): PriceQuote
+object PricingClient extends ServiceInvocation.Derived[PricingClient]
+
+trait OrderTopics:
+  @name("order-completed") def orderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
+object OrderTopics extends PubSub.Derived[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
 
@@ -46,12 +59,7 @@ class QuotePrice(using
 ) extends WorkflowActivity[OrderRequest, PriceQuote]:
   def execute(req: OrderRequest)(using DaprCapability): PriceQuote =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[QuoteRequest](
-        PricingService,
-        InvocationMethodName("quote"),
-        QuoteRequest(req.item, req.quantity),
-        HttpMethod.Post,
-      )[PriceQuote]
+      PricingClient.derive(PricingService).quote(QuoteRequest(req.item, req.quantity))
 
 class ChargePayment(using JsonCodec[ChargeInput], JsonCodec[PaymentResult])
     extends WorkflowActivity[ChargeInput, PaymentResult]:
@@ -69,7 +77,7 @@ class DispatchShipment(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult])
 class PublishOrderEvent(using JsonCodec[OrderEvent], JsonCodec[Unit]) extends WorkflowActivity[OrderEvent, Unit]:
   def execute(event: OrderEvent)(using DaprCapability): Unit =
     DaprCapability.pubsub(PubSubComponent):
-      PubSubCapability.publish(OrderCompletedTopic, event)
+      OrderTopics.derive.orderCompleted(event)
 
 // ── Workflow (saga) ───────────────────────────────────────────────────────────
 
@@ -114,9 +122,12 @@ class OrderWorkflow(using
 // handler stays pure (no println — that is @rejectSafe under safe mode); the
 // log signal in the telemetry comes from the app and daprd stdout instead.
 
-def onOrderEvent(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
-  val _ = event.data
-  SubscriptionResult.Success
+// Derived subscription: method (@name) → Topic.
+object OrderSubscriptions:
+  @name("order-completed")
+  def onOrderEvent(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
+    val _ = event.data
+    SubscriptionResult.Success
 
 // ── Server app ────────────────────────────────────────────────────────────────
 
@@ -144,7 +155,5 @@ object ServerApp:
           new DispatchShipment,
           new PublishOrderEvent,
         ),
-        subscriptions = List(
-          Subscription[OrderEvent](PubSubComponent, OrderCompletedTopic)(onOrderEvent),
-        ),
+        subscriptions = Subscriptions.derive[OrderSubscriptions.type](PubSubComponent),
       )

@@ -1,6 +1,7 @@
 package orderservice
 
 import dapr4s.*
+import dapr4s.derivation.*
 import scala.concurrent.duration.*
 
 // ── 09 · ZEISS-style order fulfillment — order service ────────────────────────
@@ -33,7 +34,40 @@ case class ShipmentResult(dispatched: Boolean, trackingId: String)
 val InventoryService = AppId("inventory-service")
 val PaymentService = AppId("payment-service")
 val ShippingService = AppId("shipping-service")
-val OrderWorkflowName = WorkflowName("OrderProcessingWorkflow")
+
+// Derived cross-service clients: each method name maps verbatim to the callee's
+// InvocationMethodName. The activities call these instead of ServiceInvocationCapability.invoke.
+trait InventoryClient:
+  def reserve(req: ReserveRequest)(using
+      ServiceInvocationCapability,
+      JsonCodec[ReserveRequest],
+      JsonCodec[ReservationResult],
+  ): ReservationResult
+  def release(req: ReleaseRequest)(using ServiceInvocationCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit
+object InventoryClient extends ServiceInvocation.Derived[InventoryClient]
+
+trait PaymentClient:
+  def charge(req: ChargeRequest)(using
+      ServiceInvocationCapability,
+      JsonCodec[ChargeRequest],
+      JsonCodec[PaymentResult],
+  ): PaymentResult
+  def refund(req: RefundRequest)(using ServiceInvocationCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit
+object PaymentClient extends ServiceInvocation.Derived[PaymentClient]
+
+trait ShippingClient:
+  def dispatch(req: ShipRequest)(using
+      ServiceInvocationCapability,
+      JsonCodec[ShipRequest],
+      JsonCodec[ShipmentResult],
+  ): ShipmentResult
+object ShippingClient extends ServiceInvocation.Derived[ShippingClient]
+
+// Derived workflow starter: @name → WorkflowName (the workflow's registered name).
+trait OrderWorkflows:
+  @name("OrderProcessingWorkflow")
+  def start(input: OrderRequest)(using WorkflowCapability, JsonCodec[OrderRequest]): WorkflowInstanceId
+object OrderWorkflows extends Workflow.Derived[OrderWorkflows]
 
 // Sample orders that exercise each saga outcome: success, out-of-stock,
 // payment-declined, and dispatch-failure (which triggers full compensation).
@@ -54,7 +88,7 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
     JsonCodec[OrderRequest],
     JsonCodec[OrderResult],
 ): ProcessOrderResult =
-  val id = WorkflowCapability.start(OrderWorkflowName, order)
+  val id = OrderWorkflows.derive.start(order)
   WorkflowCapability.waitForCompletion(id, timeout) match
     case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
     case Some(snap) =>
@@ -83,41 +117,29 @@ class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult
     extends WorkflowActivity[OrderRequest, ReservationResult]:
   def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ReserveRequest](
-        InventoryService,
-        InvocationMethodName("reserve"),
-        ReserveRequest(o.orderId, o.sku, o.quantity),
-      )[ReservationResult]
+      InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 
 class ChargeActivity(using JsonCodec[OrderRequest], JsonCodec[PaymentResult], JsonCodec[ChargeRequest])
     extends WorkflowActivity[OrderRequest, PaymentResult]:
   def execute(o: OrderRequest)(using DaprCapability): PaymentResult =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ChargeRequest](
-        PaymentService,
-        InvocationMethodName("charge"),
-        ChargeRequest(o.orderId, o.amount),
-      )[PaymentResult]
+      PaymentClient.derive(PaymentService).charge(ChargeRequest(o.orderId, o.amount))
 
 class DispatchActivity(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult], JsonCodec[ShipRequest])
     extends WorkflowActivity[OrderRequest, ShipmentResult]:
   def execute(o: OrderRequest)(using DaprCapability): ShipmentResult =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ShipRequest](
-        ShippingService,
-        InvocationMethodName("dispatch"),
-        ShipRequest(o.orderId, o.address),
-      )[ShipmentResult]
+      ShippingClient.derive(ShippingService).dispatch(ShipRequest(o.orderId, o.address))
 
 class ReleaseActivity(using JsonCodec[ReleaseRequest], JsonCodec[Unit]) extends WorkflowActivity[ReleaseRequest, Unit]:
   def execute(req: ReleaseRequest)(using DaprCapability): Unit =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ReleaseRequest](InventoryService, InvocationMethodName("release"), req)[Unit]
+      InventoryClient.derive(InventoryService).release(req)
 
 class RefundActivity(using JsonCodec[RefundRequest], JsonCodec[Unit]) extends WorkflowActivity[RefundRequest, Unit]:
   def execute(req: RefundRequest)(using DaprCapability): Unit =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[RefundRequest](PaymentService, InvocationMethodName("refund"), req)[Unit]
+      PaymentClient.derive(PaymentService).refund(req)
 
 // ── Workflow (saga orchestration — deterministic, no I/O of its own) ──────────
 

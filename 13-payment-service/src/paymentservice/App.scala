@@ -1,6 +1,7 @@
 package paymentservice
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 // ── 09 · ZEISS-style order fulfillment — payment service ──────────────────────
 // A downstream microservice invoked by the order-service saga.  `charge`
@@ -20,6 +21,11 @@ def charge(req: ChargeRequest): PaymentResult =
 
 def refund(req: RefundRequest): Unit = ()
 
+// Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
+object PaymentRoutes:
+  def charge(req: ChargeRequest): PaymentResult = paymentservice.charge(req)
+  def refund(req: RefundRequest): Unit          = paymentservice.refund(req)
+
 object PaymentApp:
   def apply()(using
       JsonCodec[ChargeRequest],
@@ -27,9 +33,4 @@ object PaymentApp:
       JsonCodec[RefundRequest],
       JsonCodec[Unit],
   ): DaprApp =
-    DaprApp(invocations =
-      List(
-        InvocationRoute[ChargeRequest, PaymentResult](InvocationMethodName("charge"))(charge),
-        InvocationRoute[RefundRequest, Unit](InvocationMethodName("refund"))(refund),
-      ),
-    )
+    DaprApp(invocations = InvocationRoutes.derive[PaymentRoutes.type])

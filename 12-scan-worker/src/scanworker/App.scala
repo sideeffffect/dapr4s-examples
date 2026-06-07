@@ -1,6 +1,7 @@
 package scanworker
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — worker service ─────────────────────────
 // Subscribes to `scan-requested`, runs the (stubbed) image scan, and publishes
@@ -18,9 +19,6 @@ import dapr4s.*
 
 val PubSubComponent = PubSubName("pubsub")
 val StateStore = StateStoreName("statestore")
-val ScanRequestedTopic = Topic("scan-requested")
-val ScanCompletedTopic = Topic("scan-completed")
-val DeadLetterTopic = Topic("scan-dead-letter")
 
 case class ScanRequest(scanId: String, image: String, source: String)
 case class Finding(severity: String, cve: String)
@@ -40,32 +38,35 @@ def scan(req: ScanRequest): ScanResult =
     else Nil
   ScanResult(req.scanId, req.image, findings, status = "scanned")
 
-def onScanRequested(event: CloudEvent[ScanRequest])(using
-    StateCapability,
-    PubSubCapability,
-    JsonCodec[SeenMarker],
-    JsonCodec[Int],
-    JsonCodec[ScanResult],
-): SubscriptionResult =
-  val req = event.data
-  if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then
-    // Already completed — at-least-once redelivery, safe to discard.
-    SubscriptionResult.Drop
-  else if req.source == "poison" then
-    // Permanently failing request — never succeeds, so the sidecar exhausts the
-    // retry policy and routes it to `deadLetterTopic`.
-    SubscriptionResult.Retry
-  else
-    val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
-    StateCapability.save(attemptKey(req.scanId), attempts + 1)
-    if req.source == "flaky" && attempts == 0 then
-      // Simulated transient failure on first delivery — ask for redelivery.
-      SubscriptionResult.Retry
+// Derived publisher: method (@name) → Topic.
+trait ScanTopics:
+  @name("scan-completed") def scanCompleted(r: ScanResult)(using PubSubCapability, JsonCodec[ScanResult]): Unit
+object ScanTopics extends PubSub.Derived[ScanTopics]
+
+// Derived subscription: method name (@name) → Topic, @deadLetter → dead-letter topic. The handler
+// body keeps the explicit StateCapability calls — idempotency/retry logic over *dynamic* keys
+// (seen-/attempt-<scanId>) has no derived form; only the wiring is derived.
+object WorkerRoutes:
+  @name("scan-requested")
+  @deadLetter("scan-dead-letter")
+  def onScanRequested(event: CloudEvent[ScanRequest])(using
+      StateCapability,
+      PubSubCapability,
+      JsonCodec[SeenMarker],
+      JsonCodec[Int],
+      JsonCodec[ScanResult],
+  ): SubscriptionResult =
+    val req = event.data
+    if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then SubscriptionResult.Drop
+    else if req.source == "poison" then SubscriptionResult.Retry
     else
-      val result = scan(req)
-      PubSubCapability.publish(ScanCompletedTopic, result)
-      StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
-      SubscriptionResult.Success
+      val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
+      StateCapability.save(attemptKey(req.scanId), attempts + 1)
+      if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry
+      else
+        ScanTopics.derive.scanCompleted(scan(req))
+        StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
+        SubscriptionResult.Success
 
 object WorkerApp:
   def apply()(using
@@ -77,10 +78,4 @@ object WorkerApp:
   ): DaprApp =
     DaprCapability.state(StateStore):
       DaprCapability.pubsub(PubSubComponent):
-        DaprApp(subscriptions =
-          List(
-            Subscription[ScanRequest](PubSubComponent, ScanRequestedTopic, deadLetterTopic = Some(DeadLetterTopic))(
-              onScanRequested,
-            ),
-          ),
-        )
+        DaprApp(subscriptions = Subscriptions.derive[WorkerRoutes.type](PubSubComponent))

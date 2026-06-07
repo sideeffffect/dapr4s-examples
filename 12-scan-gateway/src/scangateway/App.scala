@@ -1,35 +1,38 @@
 package scangateway
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — gateway service ────────────────────────
 // The gateway is the ingestion edge of the vulnerability-scanning pipeline.
 // It exposes a `submit` invocation route (callers POST an image to scan) and
 // publishes each request onto the `scan-requested` topic for the worker fleet.
 //
-// In the real Grafana system the ingestion source is an SQS queue wired in via
-// a Dapr input binding; here `seed` plays that role by publishing a fixed batch
-// so the pipeline can be driven end-to-end without external infrastructure.
+// Fully derived: the publisher and the invocation route are both generated from
+// trait/object descriptions — no reified `PubSubCapability.publish`, no
+// `InvocationRoute[...]` list.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val PubSubComponent = PubSubName("pubsub")
-val ScanRequestedTopic = Topic("scan-requested")
 
 case class ScanRequest(scanId: String, image: String, source: String)
 case class SubmitResponse(accepted: Boolean, scanId: String)
 
-def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-  PubSubCapability.publish(ScanRequestedTopic, req)
-  SubmitResponse(accepted = true, req.scanId)
+// Derived publisher: method name (@name) → Topic.
+trait ScanTopics:
+  @name("scan-requested") def scanRequested(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
+object ScanTopics extends PubSub.Derived[ScanTopics]
+
+// Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
+object GatewayRoutes:
+  def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
+    ScanTopics.derive.scanRequested(req)
+    SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
   def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
     DaprCapability.pubsub(PubSubComponent):
-      DaprApp(invocations =
-        List(
-          InvocationRoute[ScanRequest, SubmitResponse](InvocationMethodName("submit"))(submit),
-        ),
-      )
+      DaprApp(invocations = InvocationRoutes.derive[GatewayRoutes.type])
 
 // ── Seed driver (stands in for the SQS input binding) ─────────────────────────
 // Includes a duplicate scan-3 (the worker must dedup it) and a "flaky" source
@@ -46,6 +49,7 @@ def seedRequests: List[ScanRequest] =
 
 def runSeed()(using DaprCapability, JsonCodec[ScanRequest]): List[String] =
   DaprCapability.pubsub(PubSubComponent):
+    val topics = ScanTopics.derive
     seedRequests.map: req =>
-      PubSubCapability.publish(ScanRequestedTopic, req)
+      topics.scanRequested(req)
       s"${req.scanId} (${req.source})"

@@ -1,6 +1,7 @@
 package scanresults
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — results service ────────────────────────
 // Subscribes to `scan-completed`, folds each result into a running dashboard
@@ -11,8 +12,6 @@ import dapr4s.*
 
 val PubSubComponent = PubSubName("pubsub")
 val StateStore = StateStoreName("statestore")
-val ScanCompletedTopic = Topic("scan-completed")
-val DeadLetterTopic = Topic("scan-dead-letter")
 val DashboardKey = StateStoreKey("dashboard")
 
 case class Finding(severity: String, cve: String)
@@ -24,29 +23,32 @@ case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int, deadLet
 // scan-completed events would otherwise read-modify-write the same key and lose
 // updates. We compare-and-swap on the ETag and retry on conflict. The aggregate
 // is seeded once at startup (see `ResultsApp`) so every update has an ETag.
-def onScanCompleted(event: CloudEvent[ScanResult])(using
-    StateCapability,
-    JsonCodec[Dashboard],
-): SubscriptionResult =
-  val r = event.data
-  updateDashboard(d =>
-    d.copy(
-      totalScans = d.totalScans + 1,
-      totalFindings = d.totalFindings + r.findings.size,
-      critical = d.critical + r.findings.count(_.severity == "CRITICAL"),
-    ),
-  )
-  SubscriptionResult.Success
+// Derived subscriptions: each method (@name) → Topic. The handler bodies keep the explicit
+// getWithETag/saveWithETag compare-and-swap — optimistic-concurrency logic has no derived form,
+// so only the subscription wiring is derived.
+object ResultSubscriptions:
+  @name("scan-completed")
+  def onScanCompleted(event: CloudEvent[ScanResult])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+    val r = event.data
+    updateDashboard(d =>
+      d.copy(
+        totalScans = d.totalScans + 1,
+        totalFindings = d.totalFindings + r.findings.size,
+        critical = d.critical + r.findings.count(_.severity == "CRITICAL"),
+      ),
+    )
+    SubscriptionResult.Success
 
-// Dead-lettered scan requests land here after the worker's retry policy is
-// exhausted. We just tally them on the dashboard so the demo can surface the
-// count; a real pipeline would inspect/replay the payload.
-def onDeadLetter(event: CloudEvent[ScanRequest])(using
-    StateCapability,
-    JsonCodec[Dashboard],
-): SubscriptionResult =
-  updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
-  SubscriptionResult.Success
+  // Dead-lettered scan requests land here after the worker's retry policy is exhausted.
+  @name("scan-dead-letter")
+  def onDeadLetter(event: CloudEvent[ScanRequest])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+    updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
+    SubscriptionResult.Success
+
+// Derived invocation route: `dashboard` → InvocationMethodName("dashboard"), Unit input.
+object ResultRoutes:
+  def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
+    StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
 
 // Compare-and-swap a fold over the dashboard aggregate, retrying on ETag conflict.
 @annotation.tailrec
@@ -56,9 +58,6 @@ def updateDashboard(f: Dashboard => Dashboard)(using StateCapability, JsonCodec[
   entry.etag match
     case Some(tag) => if StateCapability.saveWithETag(DashboardKey, updated, tag).isDefined then updateDashboard(f)
     case None      => StateCapability.save(DashboardKey, updated)
-
-def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
-  StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
 
 object ResultsApp:
   def apply()(using
@@ -74,11 +73,6 @@ object ResultsApp:
       if StateCapability.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
         StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
       DaprApp(
-        subscriptions = List(
-          Subscription[ScanResult](PubSubComponent, ScanCompletedTopic)(onScanCompleted),
-          Subscription[ScanRequest](PubSubComponent, DeadLetterTopic)(onDeadLetter),
-        ),
-        invocations = List(
-          InvocationRoute[Unit, Dashboard](InvocationMethodName("dashboard"))(_ => dashboard()),
-        ),
+        subscriptions = Subscriptions.derive[ResultSubscriptions.type](PubSubComponent),
+        invocations = InvocationRoutes.derive[ResultRoutes.type],
       )
