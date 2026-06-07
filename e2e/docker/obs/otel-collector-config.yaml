@@ -92,6 +92,28 @@ receivers:
       - type: remove
         if: 'attributes.type != nil'
         field: attributes.type
+      # 4. The Java apps log through java.util.logging, configured app-side (via
+      #    -Djava.util.logging.SimpleFormatter.format) to a single "<LEVEL> <message>"
+      #    line. Lift the level into severity and leave just the message in the body,
+      #    so these read like the JSON logs — no level or timestamp baked into the text.
+      - type: regex_parser
+        if: 'body matches "^(SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST) "'
+        parse_from: body
+        regex: '^(?P<jul_level>SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST) (?P<jul_msg>(?s:.*?))\s*$'
+        severity:
+          parse_from: attributes.jul_level
+          mapping:
+            error: severe
+            warn: warning
+            info: [info, config]
+            debug: [fine, finer, finest]
+      - type: move
+        if: 'attributes.jul_msg != nil'
+        from: attributes.jul_msg
+        to: body
+      - type: remove
+        if: 'attributes.jul_level != nil'
+        field: attributes.jul_level
 
 processors:
   batch: {}
