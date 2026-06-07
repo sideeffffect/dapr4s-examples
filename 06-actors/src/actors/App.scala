@@ -7,8 +7,8 @@ case class IncrBy(amount: Int)
 case class CounterState(count: Int, totalIncrements: Int)
 
 val ActorTypeName = ActorType("CounterActor")
-val StateKey_Count = StateKey("count")
-val StateKey_Total = StateKey("total")
+val StateKey_Count = ActorStateKey("count")
+val StateKey_Total = ActorStateKey("total")
 val AutoTimer = TimerName("auto-tick")
 val ResetReminder = ReminderName("scheduled-reset")
 
@@ -63,14 +63,14 @@ def counterActorDefinition(
   ActorDefinition(ActorTypeName): _ =>
     ActorRoutes(
       methods = List(
-        ActorMethodRoute[IncrBy, CounterState](MethodName("increment"))(increment),
-        ActorMethodRoute[Unit, CounterState](MethodName("get"))(_ => readState),
-        ActorMethodRoute[Unit, CounterState](MethodName("reset"))(_ => reset()),
-        ActorMethodRoute[Unit, CounterState](MethodName("startTimer")): _ =>
+        ActorMethodRoute[IncrBy, CounterState](ActorMethodName("increment"))(increment),
+        ActorMethodRoute[Unit, CounterState](ActorMethodName("get"))(_ => readState),
+        ActorMethodRoute[Unit, CounterState](ActorMethodName("reset"))(_ => reset()),
+        ActorMethodRoute[Unit, CounterState](ActorMethodName("startTimer")): _ =>
           ActorContext.registerTimer(AutoTimer, IncrBy(1), tickInterval, tickDelay)
           readState
         ,
-        ActorMethodRoute[Unit, CounterState](MethodName("scheduleReset")): _ =>
+        ActorMethodRoute[Unit, CounterState](ActorMethodName("scheduleReset")): _ =>
           ActorContext.registerReminder(ResetReminder, "time to reset", reminderDelay, None)
           readState,
       ),
@@ -92,7 +92,7 @@ val DemoActorId = ActorId("counter-1")
 
 def driverGetState(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke[CounterState](MethodName("get"))
+    ActorCapability.invoke[CounterState](ActorMethodName("get"))
 
 def driverIncrement(id: ActorId, by: IncrBy)(using
     DaprCapability,
@@ -100,8 +100,8 @@ def driverIncrement(id: ActorId, by: IncrBy)(using
     JsonCodec[CounterState],
 ): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke[IncrBy](MethodName("increment"), by)[CounterState]
+    ActorCapability.invoke[IncrBy](ActorMethodName("increment"), by)[CounterState]
 
 def driverStartTimer(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke[CounterState](MethodName("startTimer"))
+    ActorCapability.invoke[CounterState](ActorMethodName("startTimer"))

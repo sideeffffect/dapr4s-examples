@@ -27,7 +27,7 @@ object GatewayApp:
     DaprCapability.pubsub(PubSubComponent):
       DaprApp(invocations =
         List(
-          InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit),
+          InvocationRoute[ScanRequest, SubmitResponse](InvocationMethodName("submit"))(submit),
         ),
       )
 

@@ -37,7 +37,7 @@ import dapr4s.*
 // StateCapability, of which there is only one, stays an implicit via the state transformer.
 // ─────────────────────────────────────────────────────────────────────────────
 
-val StateStore = StoreName("statestore")
+val StateStore = StateStoreName("statestore")
 val OrdersQueue = BindingName("orders-queue") // Kafka, bidirectional (input + output)
 val JsonPlaceholder = BindingName("jsonplaceholder") // HTTP, output only
 
@@ -48,7 +48,7 @@ final case class NewPost(title: String, body: String, userId: Int)
 // The message we put on / take off the Kafka queue: "go fetch post #postId".
 final case class PostRef(postId: Int)
 
-def postKey(id: Int): StateKey = StateKey(s"post-$id")
+def postKey(id: Int): StateStoreKey = StateStoreKey(s"post-$id")
 
 // HTTP-binding metadata: the `path` is appended to the binding's base `url`.
 private def pathMeta(path: String): Map[MetadataKey, MetadataValue] =
@@ -70,13 +70,13 @@ object BindingsExampleApp:
       DaprApp(
         invocations = List(
           // OUTPUT (HTTP, with a request body): create a post on jsonplaceholder.
-          InvocationRoute[NewPost, Post](MethodName("create")): newPost =>
+          InvocationRoute[NewPost, Post](InvocationMethodName("create")): newPost =>
             jsonPlaceholder
               .invoke(BindingOperation("post"), newPost, pathMeta("/posts"))[Post]
               .getOrElse(throw RuntimeException("jsonplaceholder returned no body for create")),
           // OUTPUT (Kafka, fire-and-forget): enqueue a reference; the BindingRoute below
           // receives it back from Kafka and does the fetch.
-          InvocationRoute[PostRef, String](MethodName("enqueue")): ref =>
+          InvocationRoute[PostRef, String](InvocationMethodName("enqueue")): ref =>
             ordersQueue.invokeOneWay(BindingOperation("create"), ref)
             s"enqueued post ${ref.postId}",
         ),

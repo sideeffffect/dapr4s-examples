@@ -30,7 +30,7 @@ APIs, but without any safe-mode restrictions.
 
 ```scala
 Dapr(config).run:                                  // DaprCapability in scope
-  DaprCapability.state(StoreName("statestore")):   // StateCapability^{cap} in scope
+  DaprCapability.state(StateStoreName("statestore")): // StateCapability^{cap} in scope
     StateCapability.save(key, value)               // OK — inside the scope
 
 // HERE: StateCapability is gone. Using it here is a compile error.

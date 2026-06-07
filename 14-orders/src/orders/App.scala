@@ -48,7 +48,7 @@ class QuotePrice(using
     DaprCapability.invoker:
       ServiceInvocationCapability.invoke[QuoteRequest](
         PricingService,
-        MethodName("quote"),
+        InvocationMethodName("quote"),
         QuoteRequest(req.item, req.quantity),
         HttpMethod.Post,
       )[PriceQuote]

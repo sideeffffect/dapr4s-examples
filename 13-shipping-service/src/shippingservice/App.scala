@@ -19,6 +19,6 @@ object ShippingApp:
   def apply()(using JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): DaprApp =
     DaprApp(invocations =
       List(
-        InvocationRoute[ShipRequest, ShipmentResult](MethodName("dispatch"))(dispatch),
+        InvocationRoute[ShipRequest, ShipmentResult](InvocationMethodName("dispatch"))(dispatch),
       ),
     )

@@ -15,10 +15,10 @@ import dapr4s.*
 // @assumeSafe boundaries inside InvocationRoute/JobRoute erase the capture set.
 // ─────────────────────────────────────────────────────────────────────────────
 
-val StateStore = StoreName("statestore")
+val StateStore = StateStoreName("statestore")
 val DemoJob = JobName("demo-job")
 
-def resultKey: StateKey = StateKey(s"job-result-${DemoJob.value}")
+def resultKey: StateStoreKey = StateStoreKey(s"job-result-${DemoJob.value}")
 
 // Schedule DemoJob to fire two seconds from now, carrying `payload`.
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
@@ -35,7 +35,7 @@ object JobsServerApp:
       DaprCapability.jobs:
         DaprApp(
           invocations = List(
-            InvocationRoute[String, String](MethodName("schedule"))(scheduleDemo),
+            InvocationRoute[String, String](InvocationMethodName("schedule"))(scheduleDemo),
           ),
           jobs = List(
             JobRoute[String](DemoJob)(onJobFired),

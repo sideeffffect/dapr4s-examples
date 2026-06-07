@@ -24,10 +24,10 @@ object DistributedLockApp:
       lockExpiry: FiniteDuration,
       shortExpiry: FiniteDuration,
   )(using DaprCapability, JsonCodec[Int]): LockDemoResult =
-    DaprCapability.state(StoreName("statestore")):
-      DaprCapability.lock(StoreName("lockstore")):
+    DaprCapability.state(StateStoreName("statestore")):
+      DaprCapability.lock(LockStoreName("lockstore")):
         val resource = LockResourceId("my-resource")
-        val counter = StateKey("lock-counter")
+        val counter = StateStoreKey("lock-counter")
 
         StateCapability.save(counter, 0)
 

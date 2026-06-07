@@ -22,8 +22,8 @@ case class HelloStateResult(
 
 object HelloStateApp:
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-    DaprCapability.state(StoreName("statestore")):
-      val key = StateKey("hello-note")
+    DaprCapability.state(StateStoreName("statestore")):
+      val key = StateStoreKey("hello-note")
 
       StateCapability.save(key, Note("Hello from dapr4s!", 1))
       val saved = StateCapability.get[Note](key)
@@ -40,17 +40,17 @@ object HelloStateApp:
 
       StateCapability.transaction(
         Seq(
-          StateOp.UpsertOp[Note](StateKey("note-a"), Note("A", 1)),
-          StateOp.UpsertOp[Note](StateKey("note-b"), Note("B", 1)),
+          StateOp.UpsertOp[Note](StateStoreKey("note-a"), Note("A", 1)),
+          StateOp.UpsertOp[Note](StateStoreKey("note-b"), Note("B", 1)),
           StateOp.DeleteOp(key),
         ),
       )
 
-      val txnNoteA = StateCapability.get[Note](StateKey("note-a"))
-      val txnNoteB = StateCapability.get[Note](StateKey("note-b"))
+      val txnNoteA = StateCapability.get[Note](StateStoreKey("note-a"))
+      val txnNoteB = StateCapability.get[Note](StateStoreKey("note-b"))
       val txnOriginal = StateCapability.get[Note](key)
 
-      val bulkMap = StateCapability.getBulk[Note](Seq(StateKey("note-a"), StateKey("note-b")))
+      val bulkMap = StateCapability.getBulk[Note](Seq(StateStoreKey("note-a"), StateStoreKey("note-b")))
       val bulk = bulkMap.map((k, e) => (k.value, e.value)).toSeq
 
       HelloStateResult(saved, etagConflict, afterUpdate, txnNoteA, txnNoteB, txnOriginal, bulk)

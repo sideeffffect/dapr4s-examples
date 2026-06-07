@@ -10,10 +10,10 @@ import dapr4s.*
 // ─────────────────────────────────────────────────────────────────────────────
 
 val PubSubComponent = PubSubName("pubsub")
-val StateStore = StoreName("statestore")
+val StateStore = StateStoreName("statestore")
 val ScanCompletedTopic = Topic("scan-completed")
 val DeadLetterTopic = Topic("scan-dead-letter")
-val DashboardKey = StateKey("dashboard")
+val DashboardKey = StateStoreKey("dashboard")
 
 case class Finding(severity: String, cve: String)
 case class ScanResult(scanId: String, image: String, findings: List[Finding], status: String)
@@ -79,6 +79,6 @@ object ResultsApp:
           Subscription[ScanRequest](PubSubComponent, DeadLetterTopic)(onDeadLetter),
         ),
         invocations = List(
-          InvocationRoute[Unit, Dashboard](MethodName("dashboard"))(_ => dashboard()),
+          InvocationRoute[Unit, Dashboard](InvocationMethodName("dashboard"))(_ => dashboard()),
         ),
       )

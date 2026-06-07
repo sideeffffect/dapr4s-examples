@@ -85,7 +85,7 @@ class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult
     DaprCapability.invoker:
       ServiceInvocationCapability.invoke[ReserveRequest](
         InventoryService,
-        MethodName("reserve"),
+        InvocationMethodName("reserve"),
         ReserveRequest(o.orderId, o.sku, o.quantity),
       )[ReservationResult]
 
@@ -95,7 +95,7 @@ class ChargeActivity(using JsonCodec[OrderRequest], JsonCodec[PaymentResult], Js
     DaprCapability.invoker:
       ServiceInvocationCapability.invoke[ChargeRequest](
         PaymentService,
-        MethodName("charge"),
+        InvocationMethodName("charge"),
         ChargeRequest(o.orderId, o.amount),
       )[PaymentResult]
 
@@ -105,19 +105,19 @@ class DispatchActivity(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult],
     DaprCapability.invoker:
       ServiceInvocationCapability.invoke[ShipRequest](
         ShippingService,
-        MethodName("dispatch"),
+        InvocationMethodName("dispatch"),
         ShipRequest(o.orderId, o.address),
       )[ShipmentResult]
 
 class ReleaseActivity(using JsonCodec[ReleaseRequest], JsonCodec[Unit]) extends WorkflowActivity[ReleaseRequest, Unit]:
   def execute(req: ReleaseRequest)(using DaprCapability): Unit =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[ReleaseRequest](InventoryService, MethodName("release"), req)[Unit]
+      ServiceInvocationCapability.invoke[ReleaseRequest](InventoryService, InvocationMethodName("release"), req)[Unit]
 
 class RefundActivity(using JsonCodec[RefundRequest], JsonCodec[Unit]) extends WorkflowActivity[RefundRequest, Unit]:
   def execute(req: RefundRequest)(using DaprCapability): Unit =
     DaprCapability.invoker:
-      ServiceInvocationCapability.invoke[RefundRequest](PaymentService, MethodName("refund"), req)[Unit]
+      ServiceInvocationCapability.invoke[RefundRequest](PaymentService, InvocationMethodName("refund"), req)[Unit]
 
 // ── Workflow (saga orchestration — deterministic, no I/O of its own) ──────────
 
@@ -184,7 +184,7 @@ object ServerApp:
           new RefundActivity,
         ),
         invocations = List(
-          InvocationRoute[OrderRequest, OrderResult](MethodName("submit-order")): order =>
+          InvocationRoute[OrderRequest, OrderResult](InvocationMethodName("submit-order")): order =>
             processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out")),
         ),
       )

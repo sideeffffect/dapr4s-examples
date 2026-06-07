@@ -8,8 +8,8 @@ case class StatsResponse(totalRequests: Long, languages: List[String])
 case class ServiceStats(count: Long, languages: List[String]) // internal state
 case class CallerResult(greetings: List[GreetResponse], stats: StatsResponse)
 
-val StatStore = StoreName("statestore")
-val StatsKey = StateKey("service-stats")
+val StatStore = StateStoreName("statestore")
+val StatsKey = StateStoreKey("service-stats")
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // All state is stored as a single ServiceStats object, so only one codec
@@ -53,8 +53,8 @@ object CalleeApp:
     DaprCapability.state(StatStore):
       DaprApp(invocations =
         List(
-          InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
-          InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
+          InvocationRoute[GreetRequest, GreetResponse](InvocationMethodName("greet"))(greet),
+          InvocationRoute[Unit, StatsResponse](InvocationMethodName("stats"))(_ => stats()),
         ),
       )
 
@@ -79,9 +79,9 @@ object CallerApp:
       val greetings = requests.map: req =>
         ServiceInvocationCapability.invoke[GreetRequest](
           target,
-          MethodName("greet"),
+          InvocationMethodName("greet"),
           req,
           HttpMethod.Post,
         )[GreetResponse]
-      val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
+      val s = ServiceInvocationCapability.invoke[StatsResponse](target, InvocationMethodName("stats"))
       CallerResult(greetings, s)

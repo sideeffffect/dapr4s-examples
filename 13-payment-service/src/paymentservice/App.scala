@@ -29,7 +29,7 @@ object PaymentApp:
   ): DaprApp =
     DaprApp(invocations =
       List(
-        InvocationRoute[ChargeRequest, PaymentResult](MethodName("charge"))(charge),
-        InvocationRoute[RefundRequest, Unit](MethodName("refund"))(refund),
+        InvocationRoute[ChargeRequest, PaymentResult](InvocationMethodName("charge"))(charge),
+        InvocationRoute[RefundRequest, Unit](InvocationMethodName("refund"))(refund),
       ),
     )

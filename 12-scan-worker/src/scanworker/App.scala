@@ -17,7 +17,7 @@ import dapr4s.*
 // ─────────────────────────────────────────────────────────────────────────────
 
 val PubSubComponent = PubSubName("pubsub")
-val StateStore = StoreName("statestore")
+val StateStore = StateStoreName("statestore")
 val ScanRequestedTopic = Topic("scan-requested")
 val ScanCompletedTopic = Topic("scan-completed")
 val DeadLetterTopic = Topic("scan-dead-letter")
@@ -27,8 +27,8 @@ case class Finding(severity: String, cve: String)
 case class ScanResult(scanId: String, image: String, findings: List[Finding], status: String)
 case class SeenMarker(scanId: String)
 
-def seenKey(scanId: String): StateKey = StateKey(s"seen-$scanId")
-def attemptKey(scanId: String): StateKey = StateKey(s"attempt-$scanId")
+def seenKey(scanId: String): StateStoreKey = StateStoreKey(s"seen-$scanId")
+def attemptKey(scanId: String): StateStoreKey = StateStoreKey(s"attempt-$scanId")
 
 // Deterministic stand-in for a real scanner (Trivy/Grype): findings derived
 // from the image string so the demo is reproducible.

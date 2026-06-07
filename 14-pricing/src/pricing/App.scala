@@ -30,6 +30,6 @@ object PricingApp:
   ): DaprApp =
     DaprApp(invocations =
       List(
-        InvocationRoute[QuoteRequest, PriceQuote](MethodName("quote"))(quote),
+        InvocationRoute[QuoteRequest, PriceQuote](InvocationMethodName("quote"))(quote),
       ),
     )

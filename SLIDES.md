@@ -354,8 +354,8 @@ Every dapr4s capability extends `scala.caps.ExclusiveCapability`:
 
 ```scala
 trait StateCapability extends scala.caps.ExclusiveCapability:
-  def save[T](key: StateKey, value: T)(using JsonCodec[T]): Unit
-  def get[T](key: StateKey)(using JsonCodec[T]): Option[T]
+  def save[T](key: StateStoreKey, value: T)(using JsonCodec[T]): Unit
+  def get[T](key: StateStoreKey)(using JsonCodec[T]): Option[T]
   ...
 ```
 
@@ -478,11 +478,11 @@ for every sub-capability — and it *cannot outlive the run block*:
 
 ```scala
 trait DaprCapability extends scala.caps.ExclusiveCapability:
-  def state(storeName: StoreName): StateCapability^{this}
+  def state(storeName: StateStoreName): StateCapability^{this}
   def pubsub(pubsubName: PubSubName): PubSubCapability^{this}
   def invoker: ServiceInvocationCapability^{this}
   def secrets(storeName: SecretStoreName): SecretsCapability^{this}
-  def lock(storeName: StoreName): DistributedLockCapability^{this}
+  def lock(storeName: LockStoreName): DistributedLockCapability^{this}
   def actor(t: ActorType, id: ActorId): ActorCapability^{this}
   def workflow: WorkflowCapability^{this}
 ```
@@ -522,14 +522,14 @@ and threads the capability implicitly via a context function (`?=>`):
 ```scala
 object HelloStateApp:                              // the pure entry point
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-    DaprCapability.state(StoreName("statestore")):
+    DaprCapability.state(StateStoreName("statestore")):
       StateCapability.save(key, Note("Hello!", 1)) // capability is ambient
       StateCapability.get[Note](key)
     // ← StateCapability is GONE here. Touching it is a compile error.
 ```
 
 ```scala
-def state(store: StoreName)[T](body: StateCapability ?=> T)
+def state(store: StateStoreName)[T](body: StateCapability ?=> T)
                               (using cap: DaprCapability): T =
   body(using cap.state(store))
 ```
@@ -543,18 +543,22 @@ Open a scope → use the capability → it's reclaimed at the brace. Guaranteed.
 dapr4s never passes a bare `String` where a domain concept belongs:
 
 ```scala
-StoreName("statestore")   ActorType("CounterActor")   Topic("hello-topic")
-StateKey("hello-note")    AppId("greeting-service")    MethodName("greet")
+StateStoreName("statestore")   ActorType("CounterActor")   Topic("hello-topic")
+StateStoreKey("hello-note")    AppId("greeting-service")    InvocationMethodName("greet")
 ```
 
 These are **opaque types** — zero runtime cost, but the compiler won't let you
-pass a `Topic` where a `StoreName` is expected. *Primitive obsession,
+pass a `Topic` where a `StateStoreName` is expected. *Primitive obsession,
 eliminated.* (~30 such types across the library.)
 
+The split goes one level deeper: each Dapr building block gets its *own* name and
+key type, so even two stores can't be confused — a `LockStoreName` is not a
+`StateStoreName`, and an `ActorStateKey` is not a `StateStoreKey`.
+
 ```scala
-opaque type StoreName = String
-object StoreName:
-  def apply(s: String): StoreName = s   // smart constructor
+opaque type StateStoreName = String
+object StateStoreName:
+  def apply(s: String): StateStoreName = s   // smart constructor
 ```
 
 ---
@@ -614,8 +618,8 @@ the Diagrid dashboard — in its own section after them.
 ```scala
 object HelloStateApp:
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-    DaprCapability.state(StoreName("statestore")):
-      val key = StateKey("hello-note")
+    DaprCapability.state(StateStoreName("statestore")):
+      val key = StateStoreKey("hello-note")
       StateCapability.save(key, Note("Hello from dapr4s!", 1))
       val saved = StateCapability.get[Note](key)
 
@@ -636,11 +640,11 @@ one capability scope. The whole function is `safe`-compiled: **no I/O leaks.**
 
 ```scala
     StateCapability.transaction(Seq(
-      StateOp.UpsertOp[Note](StateKey("note-a"), Note("A", 1)),
-      StateOp.UpsertOp[Note](StateKey("note-b"), Note("B", 1)),
+      StateOp.UpsertOp[Note](StateStoreKey("note-a"), Note("A", 1)),
+      StateOp.UpsertOp[Note](StateStoreKey("note-b"), Note("B", 1)),
       StateOp.DeleteOp(key),
     ))
-    val bulk = StateCapability.getBulk[Note](Seq(StateKey("note-a"), ...))
+    val bulk = StateCapability.getBulk[Note](Seq(StateStoreKey("note-a"), ...))
     HelloStateResult(saved, etagConflict, afterUpdate, ...)
 ```
 
@@ -713,8 +717,8 @@ object CalleeApp:
   def apply()(using DaprCapability, ...): DaprApp =
     DaprCapability.state(StatStore):
       DaprApp(invocations = List(
-        InvocationRoute[GreetRequest, GreetResponse](MethodName("greet"))(greet),
-        InvocationRoute[Unit, StatsResponse](MethodName("stats"))(_ => stats()),
+        InvocationRoute[GreetRequest, GreetResponse](InvocationMethodName("greet"))(greet),
+        InvocationRoute[Unit, StatsResponse](InvocationMethodName("stats"))(_ => stats()),
       ))
 ```
 
@@ -731,8 +735,8 @@ object CallerApp:
       val target = AppId("greeting-service")
       val greetings = requests.map: req =>
         ServiceInvocationCapability
-          .invoke[GreetRequest](target, MethodName("greet"), req, HttpMethod.Post)[GreetResponse]
-      val s = ServiceInvocationCapability.invoke[StatsResponse](target, MethodName("stats"))
+          .invoke[GreetRequest](target, InvocationMethodName("greet"), req, HttpMethod.Post)[GreetResponse]
+      val s = ServiceInvocationCapability.invoke[StatsResponse](target, InvocationMethodName("stats"))
       CallerResult(greetings, s)
 ```
 
@@ -748,8 +752,8 @@ object CallerApp:
 object DistributedLockApp:
   def apply(lockExpiry: FiniteDuration, shortExpiry: FiniteDuration)  // built in the shell
            (using DaprCapability, JsonCodec[Int]): LockDemoResult =
-    DaprCapability.state(StoreName("statestore")):
-      DaprCapability.lock(StoreName("lockstore")):
+    DaprCapability.state(StateStoreName("statestore")):
+      DaprCapability.lock(LockStoreName("lockstore")):
         val resource = LockResourceId("my-resource")
         for i <- 1 to N do
           val owner = LockOwner(s"worker-$i")
@@ -809,9 +813,9 @@ ActorDefinition(ActorTypeName): id =>
   // build is `ActorId => ActorContext ?=> ActorRoutes`, so ActorContext is implicit here
   ActorRoutes(
     methods = List(
-      ActorMethodRoute[IncrBy, CounterState](MethodName("increment"))(increment),
-      ActorMethodRoute[Unit, CounterState](MethodName("get"))(_ => readState),
-      ActorMethodRoute[Unit, CounterState](MethodName("startTimer")): _ =>
+      ActorMethodRoute[IncrBy, CounterState](ActorMethodName("increment"))(increment),
+      ActorMethodRoute[Unit, CounterState](ActorMethodName("get"))(_ => readState),
+      ActorMethodRoute[Unit, CounterState](ActorMethodName("startTimer")): _ =>
         ActorContext.registerTimer(AutoTimer, IncrBy(1), tickInterval, tickDelay)
         readState,
     ),
@@ -926,7 +930,7 @@ def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit 
 
 DaprCapability.state(StateStore): DaprCapability.jobs:
   DaprApp(
-    invocations = List(InvocationRoute[String, String](MethodName("schedule"))(scheduleDemo)),
+    invocations = List(InvocationRoute[String, String](InvocationMethodName("schedule"))(scheduleDemo)),
     jobs        = List(JobRoute[String](DemoJob)(onJobFired)),   // sidecar POSTs to /job/demo-job
   )
 ```
@@ -1008,7 +1012,7 @@ val jsonPlaceholder = cap.binding(JsonPlaceholder)  // HTTP  — output (jsonpla
 DaprCapability.state(StateStore):
   DaprApp(
     invocations = List(
-      InvocationRoute[PostRef, String](MethodName("enqueue")): ref =>
+      InvocationRoute[PostRef, String](InvocationMethodName("enqueue")): ref =>
         ordersQueue.invokeOneWay(BindingOperation("create"), ref)       // OUTPUT → Kafka
         s"enqueued post ${ref.postId}",
     ),
@@ -1165,7 +1169,7 @@ object GatewayApp:
   def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
     DaprCapability.pubsub(PubSubComponent):
       DaprApp(invocations =
-        List(InvocationRoute[ScanRequest, SubmitResponse](MethodName("submit"))(submit)))
+        List(InvocationRoute[ScanRequest, SubmitResponse](InvocationMethodName("submit"))(submit)))
 ```
 
 A caller `POST`s an image; the gateway publishes it and acks. The seed driver
@@ -1302,7 +1306,7 @@ class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult
   def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
     DaprCapability.invoker:
       ServiceInvocationCapability.invoke[ReserveRequest](
-        InventoryService, MethodName("reserve"),
+        InventoryService, InvocationMethodName("reserve"),
         ReserveRequest(o.orderId, o.sku, o.quantity))[ReservationResult]
 ```
 
@@ -1432,7 +1436,7 @@ Before, these were code-review comments. Now they're **compile errors**:
 - A capability **cannot escape** into a stored closure or another thread
 - A handler's request/response **types match the wire contract** — `InvocationRoute[In,Out]`
 - `Task[O]` from a workflow **cannot be awaited outside the run** — replay-safe
-- A `Topic` **cannot be passed where a `StoreName` is expected** — opaque types
+- A `Topic` **cannot be passed where a `StateStoreName` is expected** — opaque types
 - I/O **cannot hide** inside "pure" business logic — safe mode + `@rejectSafe`
 
 > The illegal program doesn't fail in production. It **doesn't compile.**
@@ -1448,7 +1452,7 @@ flowchart LR
     A["use client after scope closes"]
     B["capability escapes to a thread"]
     C["await Task outside the run"]
-    D["Topic used as a StoreName"]
+    D["Topic used as a StateStoreName"]
     E2["hidden I/O in 'pure' logic"]
   end
   WALL{{"capture checking<br/>+ safe mode"}}

@@ -8,14 +8,14 @@ import dapr4s.*
 // insufficient); `release` is the compensating action that puts stock back.
 // ─────────────────────────────────────────────────────────────────────────────
 
-val StateStore = StoreName("statestore")
+val StateStore = StateStoreName("statestore")
 val DefaultStock = 10
 
 case class ReserveRequest(orderId: String, sku: String, quantity: Int)
 case class ReservationResult(reserved: Boolean, reservationId: String)
 case class ReleaseRequest(reservationId: String, sku: String, quantity: Int)
 
-def stockKey(sku: String): StateKey = StateKey(s"stock-$sku")
+def stockKey(sku: String): StateStoreKey = StateStoreKey(s"stock-$sku")
 
 def reserve(req: ReserveRequest)(using StateCapability, JsonCodec[Int]): ReservationResult =
   val current = StateCapability.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
@@ -40,7 +40,7 @@ object InventoryApp:
     DaprCapability.state(StateStore):
       DaprApp(invocations =
         List(
-          InvocationRoute[ReserveRequest, ReservationResult](MethodName("reserve"))(reserve),
-          InvocationRoute[ReleaseRequest, Unit](MethodName("release"))(release),
+          InvocationRoute[ReserveRequest, ReservationResult](InvocationMethodName("reserve"))(reserve),
+          InvocationRoute[ReleaseRequest, Unit](InvocationMethodName("release"))(release),
         ),
       )
