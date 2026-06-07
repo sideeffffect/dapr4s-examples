@@ -200,9 +200,11 @@ object ServerApp:
       JsonCodec[Unit],
   ): DaprApp =
     // Routes close over `timeout`; InvocationRoutes.derive turns each method into an InvocationRoute,
-    // summoning the WorkflowCapability/JsonCodecs the body needs at this derive site.
+    // summoning the WorkflowCapability/JsonCodecs the body needs at this derive site. The route name is
+    // a backtick identifier (no `@name`): kebab-case here keeps the on-the-wire invocation path stable
+    // for external HTTP callers, which is the documented fallback when a plain PascalCase name won't do.
     object OrderRoutes:
-      def SubmitOrder(order: OrderRequest)(using
+      def `submit-order`(order: OrderRequest)(using
           WorkflowCapability,
           JsonCodec[OrderRequest],
           JsonCodec[OrderResult],

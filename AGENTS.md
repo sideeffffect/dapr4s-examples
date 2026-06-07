@@ -249,7 +249,7 @@ workflow across four services (each with its own `-shell`):
 
 - **order-service** — runs `OrderProcessingWorkflow`, which calls the downstream services
   in sequence (reserve → charge → dispatch) and compensates on failure (release / refund).
-  Hosts a `SubmitOrder` invocation route. `orderServer` is the workflow/server app;
+  Hosts a `submit-order` invocation route. `orderServer` is the workflow/server app;
   `orderDriver` submits the sample orders and prints outcomes.
 - **inventory-service** — `reserve` / `release` (`inventoryServer`).
 - **payment-service** — `charge` / `refund` (`paymentServer`).
@@ -269,7 +269,7 @@ dapr run --app-id shipping-service --app-port 8094 \
          --components-path ./components \
          -- mill 09-shipping-service-shell.runMain shippingservice.shippingServer
 
-# Terminal 4 — order-service (workflow + SubmitOrder route)
+# Terminal 4 — order-service (workflow + submit-order route)
 dapr run --app-id order-service --app-port 8091 \
          --components-path ./components \
          -- mill 09-order-service-shell.runMain orderservice.orderServer
