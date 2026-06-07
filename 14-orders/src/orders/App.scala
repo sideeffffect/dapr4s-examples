@@ -43,41 +43,47 @@ trait OrderTopics:
 object OrderTopics extends PubSub.Derived[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
+// A plain class of activity methods — no `extends WorkflowActivity`, no manual
+// registration. `WorkflowActivities.derive[OrderActivities]` (in ServerApp) reifies
+// one WorkflowActivity per method; `OrderActivityCalls` (below) is the typed caller
+// the workflow uses. Each method receives a DaprCapability per call, so the I/O
+// activities (quotePrice via service invocation, publishOrderEvent via pub/sub) may
+// do Dapr I/O; the rest are pure computations.
 
-class ReserveInventory(using JsonCodec[OrderRequest], JsonCodec[ReservationResult])
-    extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(req: OrderRequest)(using DaprCapability): ReservationResult =
+class OrderActivities:
+  def reserveInventory(req: OrderRequest)(using DaprCapability): ReservationResult =
     val ok = req.quantity <= 5
     ReservationResult(ok, if ok then s"RES-${req.orderId}" else "")
 
-// Calls the downstream pricing service over Dapr service invocation. This is the
-// cross-service hop that makes the distributed trace interesting.
-class QuotePrice(using
-    JsonCodec[OrderRequest],
-    JsonCodec[QuoteRequest],
-    JsonCodec[PriceQuote],
-) extends WorkflowActivity[OrderRequest, PriceQuote]:
-  def execute(req: OrderRequest)(using DaprCapability): PriceQuote =
+  // Calls the downstream pricing service over Dapr service invocation. This is the
+  // cross-service hop that makes the distributed trace interesting.
+  def quotePrice(req: OrderRequest)(using DaprCapability, JsonCodec[QuoteRequest], JsonCodec[PriceQuote]): PriceQuote =
     DaprCapability.invoker:
       PricingClient.derive(PricingService).quote(QuoteRequest(req.item, req.quantity))
 
-class ChargePayment(using JsonCodec[ChargeInput], JsonCodec[PaymentResult])
-    extends WorkflowActivity[ChargeInput, PaymentResult]:
-  def execute(in: ChargeInput)(using DaprCapability): PaymentResult =
+  def chargePayment(in: ChargeInput)(using DaprCapability): PaymentResult =
     val ok = in.order.budget >= in.quote.total
     PaymentResult(ok, if ok then s"TXN-${in.order.orderId}" else "", in.quote.total)
 
-class DispatchShipment(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult])
-    extends WorkflowActivity[OrderRequest, ShipmentResult]:
-  def execute(req: OrderRequest)(using DaprCapability): ShipmentResult =
+  def dispatchShipment(req: OrderRequest)(using DaprCapability): ShipmentResult =
     ShipmentResult(dispatched = true, trackingId = s"TRK-${req.orderId}")
 
-// Publishes the terminal order event to pub/sub. The audit subscription below
-// consumes it, adding a publish + deliver span to the trace.
-class PublishOrderEvent(using JsonCodec[OrderEvent], JsonCodec[Unit]) extends WorkflowActivity[OrderEvent, Unit]:
-  def execute(event: OrderEvent)(using DaprCapability): Unit =
+  // Publishes the terminal order event to pub/sub. The audit subscription below
+  // consumes it, adding a publish + deliver span to the trace.
+  def publishOrderEvent(event: OrderEvent)(using DaprCapability, JsonCodec[OrderEvent]): Unit =
     DaprCapability.pubsub(PubSubComponent):
       OrderTopics.derive.orderCompleted(event)
+
+// Typed caller the workflow schedules activities through (derived from OrderActivities;
+// each call forwards to WorkflowContext under the activity's name). The returned Task
+// captures the per-call context, so it cannot escape `run`.
+trait OrderActivityCalls:
+  def reserveInventory(req: OrderRequest)(using ctx: WorkflowContext): Task[ReservationResult]^{ctx}
+  def quotePrice(req: OrderRequest)(using ctx: WorkflowContext): Task[PriceQuote]^{ctx}
+  def chargePayment(in: ChargeInput)(using ctx: WorkflowContext): Task[PaymentResult]^{ctx}
+  def dispatchShipment(req: OrderRequest)(using ctx: WorkflowContext): Task[ShipmentResult]^{ctx}
+  def publishOrderEvent(event: OrderEvent)(using ctx: WorkflowContext): Task[Unit]^{ctx}
+object OrderActivityCalls extends WorkflowActivityCalls.Derived[OrderActivityCalls, OrderActivities]
 
 // ── Workflow (saga) ───────────────────────────────────────────────────────────
 
@@ -94,27 +100,22 @@ class OrderWorkflow(using
     JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
+    val acts  = OrderActivityCalls.derive
     val order = WorkflowContext.getInput[OrderRequest].getOrElse(throw RuntimeException("no input"))
 
-    val reservation = WorkflowContext.callActivity[ReserveInventory](order).await()
+    val reservation = acts.reserveInventory(order).await()
     if !reservation.reserved then
-      WorkflowContext
-        .callActivity[PublishOrderEvent](OrderEvent(order.orderId, order.item, "out-of-stock", 0.0))
-        .await()
+      acts.publishOrderEvent(OrderEvent(order.orderId, order.item, "out-of-stock", 0.0)).await()
       WorkflowContext.complete(OrderResult(false, "out of stock"))
     else
-      val quote = WorkflowContext.callActivity[QuotePrice](order).await()
-      val payment = WorkflowContext.callActivity[ChargePayment](ChargeInput(order, quote)).await()
+      val quote   = acts.quotePrice(order).await()
+      val payment = acts.chargePayment(ChargeInput(order, quote)).await()
       if !payment.charged then
-        WorkflowContext
-          .callActivity[PublishOrderEvent](OrderEvent(order.orderId, order.item, "payment-declined", quote.total))
-          .await()
+        acts.publishOrderEvent(OrderEvent(order.orderId, order.item, "payment-declined", quote.total)).await()
         WorkflowContext.complete(OrderResult(false, "payment declined"))
       else
-        val shipment = WorkflowContext.callActivity[DispatchShipment](order).await()
-        WorkflowContext
-          .callActivity[PublishOrderEvent](OrderEvent(order.orderId, order.item, "shipped", payment.amount))
-          .await()
+        val shipment = acts.dispatchShipment(order).await()
+        acts.publishOrderEvent(OrderEvent(order.orderId, order.item, "shipped", payment.amount)).await()
         WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
 // ── Audit subscription ──────────────────────────────────────────────────────────
@@ -148,12 +149,6 @@ object ServerApp:
     DaprCapability.pubsub(PubSubComponent):
       DaprApp(
         workflows = List(new OrderWorkflow),
-        activities = List(
-          new ReserveInventory,
-          new QuotePrice,
-          new ChargePayment,
-          new DispatchShipment,
-          new PublishOrderEvent,
-        ),
+        activities = WorkflowActivities.derive[OrderActivities],
         subscriptions = Subscriptions.derive[OrderSubscriptions.type](PubSubComponent),
       )

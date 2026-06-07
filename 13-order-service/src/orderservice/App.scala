@@ -108,38 +108,45 @@ object DriverApp:
       sampleOrders.map(processOrder(_, timeout))
 
 // ── Activities — each performs one cross-service call ─────────────────────────
-// Pure under safe mode: `execute` receives the DaprCapability per call and uses
-// it only within that call (never stored), and the JsonCodecs are plain values
-// captured at construction.  No @assumeSafe — contrast with capturing a
-// ServiceInvocationCapability in a field, which safe mode forbids.
+// A plain class of activity methods — no `extends WorkflowActivity`, no manual
+// registration. `WorkflowActivities.derive[OrderActivities]` (in ServerApp) reifies
+// one WorkflowActivity per method; `OrderActivityCalls` (below) is the typed caller
+// the saga uses. Pure under safe mode: each method receives the DaprCapability per
+// call and uses it only within that call (never stored); the JsonCodecs the bodies
+// need for their downstream calls are declared as `using` params and summoned at the
+// derive site.
 
-class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult], JsonCodec[ReserveRequest])
-    extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
+class OrderActivities:
+  def reserve(o: OrderRequest)(using DaprCapability, JsonCodec[ReserveRequest], JsonCodec[ReservationResult])
+      : ReservationResult =
     DaprCapability.invoker:
       InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 
-class ChargeActivity(using JsonCodec[OrderRequest], JsonCodec[PaymentResult], JsonCodec[ChargeRequest])
-    extends WorkflowActivity[OrderRequest, PaymentResult]:
-  def execute(o: OrderRequest)(using DaprCapability): PaymentResult =
+  def charge(o: OrderRequest)(using DaprCapability, JsonCodec[ChargeRequest], JsonCodec[PaymentResult]): PaymentResult =
     DaprCapability.invoker:
       PaymentClient.derive(PaymentService).charge(ChargeRequest(o.orderId, o.amount))
 
-class DispatchActivity(using JsonCodec[OrderRequest], JsonCodec[ShipmentResult], JsonCodec[ShipRequest])
-    extends WorkflowActivity[OrderRequest, ShipmentResult]:
-  def execute(o: OrderRequest)(using DaprCapability): ShipmentResult =
+  def dispatch(o: OrderRequest)(using DaprCapability, JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): ShipmentResult =
     DaprCapability.invoker:
       ShippingClient.derive(ShippingService).dispatch(ShipRequest(o.orderId, o.address))
 
-class ReleaseActivity(using JsonCodec[ReleaseRequest], JsonCodec[Unit]) extends WorkflowActivity[ReleaseRequest, Unit]:
-  def execute(req: ReleaseRequest)(using DaprCapability): Unit =
+  def release(req: ReleaseRequest)(using DaprCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit =
     DaprCapability.invoker:
       InventoryClient.derive(InventoryService).release(req)
 
-class RefundActivity(using JsonCodec[RefundRequest], JsonCodec[Unit]) extends WorkflowActivity[RefundRequest, Unit]:
-  def execute(req: RefundRequest)(using DaprCapability): Unit =
+  def refund(req: RefundRequest)(using DaprCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit =
     DaprCapability.invoker:
       PaymentClient.derive(PaymentService).refund(req)
+
+// Typed caller the saga schedules activities through (derived from OrderActivities;
+// each call forwards to WorkflowContext under the activity's name).
+trait OrderActivityCalls:
+  def reserve(o: OrderRequest)(using ctx: WorkflowContext): Task[ReservationResult]^{ctx}
+  def charge(o: OrderRequest)(using ctx: WorkflowContext): Task[PaymentResult]^{ctx}
+  def dispatch(o: OrderRequest)(using ctx: WorkflowContext): Task[ShipmentResult]^{ctx}
+  def release(req: ReleaseRequest)(using ctx: WorkflowContext): Task[Unit]^{ctx}
+  def refund(req: RefundRequest)(using ctx: WorkflowContext): Task[Unit]^{ctx}
+object OrderActivityCalls extends WorkflowActivityCalls.Derived[OrderActivityCalls, OrderActivities]
 
 // ── Workflow (saga orchestration — deterministic, no I/O of its own) ──────────
 
@@ -154,27 +161,24 @@ class OrderProcessingWorkflow(using
     JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
+    val acts = OrderActivityCalls.derive
     val order = WorkflowContext
       .getInput[OrderRequest]
       .getOrElse:
         throw RuntimeException("no input")
 
-    val reservation = WorkflowContext.callActivity[ReserveActivity](order).await()
+    val reservation = acts.reserve(order).await()
     if !reservation.reserved then WorkflowContext.complete(OrderResult(false, "out of stock"))
     else
-      val payment = WorkflowContext.callActivity[ChargeActivity](order).await()
+      val payment = acts.charge(order).await()
       if !payment.charged then
-        WorkflowContext
-          .callActivity[ReleaseActivity](ReleaseRequest(reservation.reservationId, order.sku, order.quantity))
-          .await()
+        acts.release(ReleaseRequest(reservation.reservationId, order.sku, order.quantity)).await()
         WorkflowContext.complete(OrderResult(false, "payment declined"))
       else
-        val shipment = WorkflowContext.callActivity[DispatchActivity](order).await()
+        val shipment = acts.dispatch(order).await()
         if !shipment.dispatched then
-          WorkflowContext.callActivity[RefundActivity](RefundRequest(payment.transactionId, order.amount)).await()
-          WorkflowContext
-            .callActivity[ReleaseActivity](ReleaseRequest(reservation.reservationId, order.sku, order.quantity))
-            .await()
+          acts.refund(RefundRequest(payment.transactionId, order.amount)).await()
+          acts.release(ReleaseRequest(reservation.reservationId, order.sku, order.quantity)).await()
           WorkflowContext.complete(OrderResult(false, "dispatch failed"))
         else WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
@@ -195,18 +199,20 @@ object ServerApp:
       JsonCodec[RefundRequest],
       JsonCodec[Unit],
   ): DaprApp =
+    // Routes close over `timeout`; InvocationRoutes.derive turns each method into an InvocationRoute,
+    // summoning the WorkflowCapability/JsonCodecs the body needs at this derive site.
+    object OrderRoutes:
+      @name("submit-order")
+      def submitOrder(order: OrderRequest)(using
+          WorkflowCapability,
+          JsonCodec[OrderRequest],
+          JsonCodec[OrderResult],
+      ): OrderResult =
+        processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out"))
+
     DaprCapability.workflow:
       DaprApp(
         workflows = List(new OrderProcessingWorkflow),
-        activities = List(
-          new ReserveActivity,
-          new ChargeActivity,
-          new DispatchActivity,
-          new ReleaseActivity,
-          new RefundActivity,
-        ),
-        invocations = List(
-          InvocationRoute[OrderRequest, OrderResult](InvocationMethodName("submit-order")): order =>
-            processOrder(order, timeout).result.getOrElse(OrderResult(false, "timed out")),
-        ),
+        activities = WorkflowActivities.derive[OrderActivities],
+        invocations = InvocationRoutes.derive[OrderRoutes.type],
       )

@@ -10,19 +10,24 @@ private val NightliesRepo = MavenRepository(
   "https://repo.scala-lang.org/artifactory/maven-nightlies",
 )
 
+// dapr4s snapshots (every push to master publishes a `<next-patch>-SNAPSHOT` here).
+private val SnapshotsRepo = MavenRepository(
+  "https://central.sonatype.com/repository/maven-snapshots",
+)
+
 object nightliesJvmWorker extends JvmWorkerModule:
   override def repositoriesTask = Task.Anon {
-    super.repositoriesTask() ++ Seq(NightliesRepo)
+    super.repositoriesTask() ++ Seq(NightliesRepo, SnapshotsRepo)
   }
 
 val ScalaVersion = "3.9.0-RC1-bin-20260501-0c8c581-NIGHTLY"
-val Dapr4sVersion = "0.12.0"
+val Dapr4sVersion = "0.12.1-SNAPSHOT"
 
 trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
   def scalaVersion = ScalaVersion
   override def repositoriesTask = Task.Anon {
-    super.repositoriesTask() ++ Seq(NightliesRepo)
+    super.repositoriesTask() ++ Seq(NightliesRepo, SnapshotsRepo)
   }
 
 trait Dapr4sModule extends BaseModule:
