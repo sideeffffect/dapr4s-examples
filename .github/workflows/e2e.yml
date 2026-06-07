@@ -27,16 +27,16 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
       - name: Cache Mill and Coursier
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/coursier
@@ -63,7 +63,7 @@ jobs:
 
       - name: Restore Docker image cache
         id: imgcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.docker-image-cache
           key: docker-images-v1-${{ steps.imageset.outputs.hash }}
@@ -77,7 +77,7 @@ jobs:
       # are set (secrets aren't readable in `if:`, so they're mapped to env first).
       - name: Log in to Docker Hub (optional)
         if: steps.imgcache.outputs.cache-hit != 'true' && env.DOCKERHUB_USERNAME != ''
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -119,14 +119,14 @@ jobs:
       # keeps the freshly pulled images for the next run.
       - name: Save Docker image cache
         if: always() && steps.imgcache.outputs.cache-hit != 'true' && steps.pullsave.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.docker-image-cache
           key: docker-images-v1-${{ steps.imageset.outputs.hash }}
 
       - name: Upload test results on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.suite }}
           path: out/e2e/testForked.dest/
@@ -137,16 +137,16 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
@@ -163,7 +163,7 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
 
       - name: Upload slides PDF
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: slides
           path: out/slides.dest/SLIDES.pdf
