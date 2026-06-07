@@ -1029,8 +1029,8 @@ DaprCapability.state(StateStore):
 ## Running any example
 
 ```bash
-# one-time: publish dapr4s locally
-cd ../scala-safe-dapr && scala-cli --power publish local .
+# dapr4s resolves from Maven Central (com.github.sideeffffect::dapr4s)
+# (building from source instead: cd ../dapr4s && scala-cli --power publish local .)
 
 # need Redis for state/pubsub/lock
 docker run -d -p 6379:6379 redis:7
@@ -1471,6 +1471,67 @@ flowchart LR
 
 The five classic distributed-systems mistakes all hit the same wall — and bounce
 off as a red squiggle in your editor, not a 3 a.m. page.
+
+---
+
+## Optional sugar: derive the wiring from a trait
+
+Every example so far hand-wrote the reified model — that's the foundation. For the
+*repetitive* call sites, `dapr4s.derivation` can generate the facade from a trait you
+describe. Same types, same capture-checking, less boilerplate. (Distinct from JSON-codec
+derivation — this derives the *routes/clients*.)
+
+```scala
+// before — the explicit caller from example 4
+ServiceInvocationCapability
+  .invoke[GreetRequest](AppId("greeting-service"), InvocationMethodName("greet"), req)[GreetResponse]
+
+// after — describe it once, let dapr4s implement it
+trait GreetingService:
+  def greet(req: GreetRequest)(using ServiceInvocationCapability,
+      JsonCodec[GreetRequest], JsonCodec[GreetResponse]): GreetResponse
+object GreetingService extends ServiceInvocation.Derived[GreetingService]
+
+val svc = GreetingService.derive(AppId("greeting-service"))
+svc.greet(req)            // method name → InvocationMethodName; types preserved
+```
+
+---
+
+## One trait per building block
+
+The Scala **method name maps verbatim** to the Dapr name (override with `@name("…")`);
+the capability and codecs still arrive per call.
+
+| Engine | Method → name | Engine | Method → name |
+|---|---|---|---|
+| `ServiceInvocation` / `Bindings` / `Actor` | invoke | `PubSub` | publish → `Topic` |
+| `Secrets` / `Configuration` | get → key | `Crypto` | encrypt → `CryptoKeyName` |
+| `Jobs` | schedule → `JobName` | `Workflow` | start → `WorkflowName` |
+| `State` / `ActorState` | `def x` / `def x_=` | `WorkflowEvents` | waitForExternalEvent |
+
+```scala
+trait Counter:                                   // State / ActorState: getter + setter
+  def count(using StateCapability, JsonCodec[Int]): Option[Int]
+  def count_=(v: Int)(using StateCapability, JsonCodec[Int]): Unit
+
+val defn = ActorDefinitions.derive[CounterActor]  // server side: a whole actor class →
+                                                  // ActorDefinition (@reminder / @timer routes)
+```
+
+---
+
+## Sugar, not a new model
+
+- A **transparent inline macro** expands to the *exact* reified calls from Part 5 — no
+  runtime layer, the same `^{…}` capture-checking, codecs still passed in from the shell.
+- The capability arrives **per call** (capture checking forbids capturing an
+  `ExclusiveCapability`) — so derivation **can't hide effects**; the wiring is generated, not the effect.
+- `X.Derived[T]` is an `inline` mixin giving `MyService.derive`. A *macro-annotation* form
+  was tried and dropped — Scala 3 annotations expand after the typer, so generated members
+  are invisible in the same compilation run.
+
+> The explicit reified API stays the foundation; derivation is an opt-in convenience on top.
 
 ---
 
