@@ -342,6 +342,10 @@ client connection. A type becomes a capability by extending
 That single rule turns "don't use the client after close" from a code-review
 comment into a **compile error**.
 
+> "A capability is … essentially just a value of interest — a file, a mutable data
+> structure, or a permission to do something. The idea goes back to 1966."
+> — **Martin Odersky**, *The Marco Show* (2026)
+
 ---
 
 ## `ExclusiveCapability` — dapr4s's workhorse
@@ -1479,6 +1483,9 @@ dapr4s is **direct style**: ordinary code, ordinary control flow, no `for`-compr
 monad tax — but the *capabilities* are tracked. No effect-runtime dependency;
 blocking calls under the hood, ready for **JVM virtual threads**.
 
+> "Capabilities … solve this problem of effect polymorphism — a very fundamental
+> problem [that] hasn't been solved for 30 years." — **Martin Odersky** (2026)
+
 ---
 
 ## Two roads to "effects in types"
@@ -1503,8 +1510,10 @@ flowchart LR
   class monadic m; class CE,KYO m; class direct d; class OX,D4S d; class ET et;
 ```
 
-Same destination, different ergonomics. dapr4s takes the **direct-style** road —
-plain control flow, effects tracked by `^` captures instead of a monad.
+Same destination, different ergonomics — dapr4s takes the **direct-style** road.
+And capture checking dissolves the **function-coloring** problem (async "red" vs.
+direct "blue" functions that won't compose): `map`/`foreach` stay *polymorphic in
+the effect* their argument carries.
 
 ---
 
@@ -1523,6 +1532,30 @@ plain control flow, effects tracked by `^` captures instead of a monad.
   your data model; no type system makes that go away (as the *Tar Pit* critics note)
 
 > The *direction* — effects the compiler can prove — is the durable idea here.
+
+---
+
+## Where this is heading — capabilities for safe AI agents
+
+Odersky's stated next direction for Scala, and why this matters in 2026:
+
+- Agent-written code is cheap and abundant, but **can't be meaningfully reviewed**
+  ("a losing proposition") — it hallucinates and can be prompt-injected.
+- So don't review the code — **constrain it with types**. An agent gets only the
+  capabilities you hand it; nothing global to reach for.
+
+His example, in dapr4s's own vocabulary — summarise a secret without leaking it:
+
+```scala
+class Classified[A](a: A):
+  def map[B](f: A -> B): Classified[B]   // f must be PURE (A -> B, not A =>)
+  //  reading `a` out needs a `reveal` capability the agent never receives
+```
+
+The pure arrow `A -> B` is the compiler **proving** the transform can't log, store,
+or phone home — the same machinery dapr4s uses for Dapr clients, aimed at untrusted code.
+
+> "You can't trust your agents … you have to be much more surgical in what they can do." — **Martin Odersky**
 
 ---
 
@@ -1560,6 +1593,8 @@ docs.dapr.io · scala-lang.org capture checking
 - **Capture Checking** — Scala 3 docs: capturing types, safe exceptions, safe mode
 - **Foundations** — Odersky et al., *CF<: calculus* (TOPLAS 2023);
   *Capabilities for Safe AI Agents* (EPFL 2026)
+- **The vision** — Odersky, *"Scala Was an Experiment That Changed Programming"*,
+  The Marco Show / JetBrains (2026) — capabilities, effect polymorphism, safe agents
 - **Effect-systems landscape** — Kyo, Ox, Gears, Effekt; Cats Effect & ZIO
 - **Type-driven design** — King, *Parse, Don't Validate*; nrinaudo, *Scala Best Practices*
 - **Complexity** — Moseley & Marks, *Out of the Tar Pit* (2006) — essential vs. accidental, state & control
