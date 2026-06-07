@@ -1,7 +1,6 @@
 package jobs
 
 import dapr4s.*
-import dapr4s.derivation.*
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // Jobs has two halves, both shown here:
@@ -21,16 +20,9 @@ val DemoJob = JobName("DemoJob")
 
 def resultKey: StateStoreKey = StateStoreKey(s"job-result-${DemoJob.value}")
 
-// The scheduler is described as a trait; dapr4s.derivation implements it. The method name
-// maps verbatim to the JobName (PascalCase, so no `@name`); a `dueTime: Instant` parameter
-// selects scheduleOnce.
-trait Scheduler:
-  def DemoJob(data: String, dueTime: java.time.Instant)(using JobsCapability, JsonCodec[String]): Unit
-lazy val Scheduler: Scheduler = Jobs.derive[Scheduler]
-
 // Schedule DemoJob to fire two seconds from now, carrying `payload`.
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
-  Scheduler.DemoJob(payload, java.time.Instant.now().plusSeconds(2))
+  JobsCapability.scheduleOnce(DemoJob, payload, java.time.Instant.now().plusSeconds(2))
   payload
 
 // Invoked by the sidecar when DemoJob fires; records the payload for inspection.

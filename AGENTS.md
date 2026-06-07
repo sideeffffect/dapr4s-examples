@@ -12,6 +12,36 @@ it statically via capture checking.
 
 ---
 
+## Two API styles — and a strict split across the examples
+
+dapr4s exposes each building block two ways, and the examples are deliberately partitioned
+so each style is shown on its own:
+
+- **Primitive reified** — you hand-write the wiring: call capability methods directly
+  (`PubSubCapability.publish`, `ServiceInvocationCapability.invoke`, `ActorCapability.invoke`,
+  `CryptoCapability.encryptString`, `JobsCapability.scheduleOnce`, `WorkflowContext.callActivity`)
+  and construct routes/subscriptions/activities by hand (`InvocationRoute[…]`, `Subscription[…]`,
+  `ActorDefinition`, `JobRoute`, `extends WorkflowActivity`). This is the foundation.
+- **Derived** — you describe a trait/object/class of method signatures and let
+  `dapr4s.derivation` generate the facade (`PubSub.derive`, `ServiceInvocation.derive`,
+  `Actor.derive`, `Crypto.derive`, `Jobs.derive`, `InvocationRoutes.derive`,
+  `Subscriptions.derive`, `WorkflowActivities.derive`, `WorkflowActivityCalls.derive`, …).
+  Same types, same capture-checking, less boilerplate.
+
+> **Rule (enforced — keep it this way):**
+> - **Examples 1–11 must use ONLY the primitive reified approach.** No `import dapr4s.derivation.*`,
+>   no `.derive` factories, no `@dapr4s.derivation.name`. They teach the raw building blocks.
+> - **Examples 12–14 must use ONLY the derived approach** for their wiring (publishers,
+>   subscriptions, routes, clients, workflow activities). They are the real-world case studies
+>   that showcase derivation.
+>
+> Note: opening a capability *scope* (`Dapr(config).run`, `DaprCapability.state(store) { … }`,
+> `DaprCapability.pubsub(component) { … }`) and in-handler operations that have **no** derived
+> form (e.g. `StateCapability.get`/`save` over *dynamic* keys) are foundational and used by
+> **both** styles — they are not "the primitive approach" being toggled here.
+
+---
+
 ## What "Safe Scala" means here
 
 The pure modules are compiled with `-language:experimental.safe`, which enables three things
@@ -66,9 +96,9 @@ The split is *not* "pure = no I/O, shell = entry point". A pure module routinely
 the server app and its request/workflow handlers: because each capability (e.g.
 `DaprCapability`, `ServiceInvocationCapability`) is passed into a call and used only
 within it — never captured in a field — capture checking is satisfied without
-`@assumeSafe`. Example 09 (`09-order-service`) demonstrates this: its saga workflow, all
+`@assumeSafe`. Example 13 (`13-order-service`) demonstrates this: its saga workflow, all
 five activities, and `ServerApp` live in the *pure* module; only `object Codecs`
-(`@assumeSafe`) and the `@main` entries live in `09-order-service-shell`. The library
+(`@assumeSafe`) and the `@main` entries live in `13-order-service-shell`. The library
 entry point is `class Dapr` (`Dapr(config).run { ... }` / `Dapr(config).serve { ... }`),
 which is the one impure thing the `@main`s do.
 
@@ -299,21 +329,25 @@ trickles orders forever (Ctrl-C to stop). See `SPEC-14-observability.md`.
 
 ## Example progression
 
-| # | Pure module | Shell module | Dapr feature | Safe Scala highlight |
+Each module has a matching `-shell/` alongside it. **Style** is the API style each example
+is locked to (see "Two API styles" above): examples 1–11 are **reified**, 12–14 are **derived**.
+
+| # | Pure module(s) | Dapr feature | Safe Scala highlight | Style |
 |---|---|---|---|---|
-| 1 | `01-hello-state/` | `01-hello-state-shell/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` |
-| 2 | `02-secrets-config/` | `02-secrets-config-shell/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures |
-| 3 | `03-hello-pubsub/` | `03-hello-pubsub-shell/` | Pub/sub publish + subscribe | Handler's `PubSubCapability` context-threaded via `?=>` |
-| 4 | `04-service-invocation/` | `04-service-invocation-shell/` | HTTP service-to-service calls | `ServiceInvocationCapability` and typed `InvocationRoute` handlers |
-| 5 | `05-distributed-lock/` | `05-distributed-lock-shell/` | Distributed lock | Lock capability ensures try/unlock pairing |
-| 6 | `06-actors/` | `06-actors-shell/` | Virtual actors, timers, reminders | `ActorContext` is a per-invocation capability; actor state is isolated |
-| 7 | `07-workflows/` | `07-workflows-shell/` | Durable workflows, saga, compensation | `WorkflowContext` enables deterministic replay; activity results are `Task[O]` |
-| 8 | `08-scan-gateway/`, `08-scan-worker/`, `08-scan-results/` | matching `-shell/` modules | Grafana-style fan-out pub/sub pipeline with a real dead-letter queue | Three services; subscribers' `PubSubCapability` threaded into handlers; dead-letter topic counted in the dashboard |
-| 9 | `09-order-service/`, `09-inventory-service/`, `09-payment-service/`, `09-shipping-service/` | matching `-shell/` modules | ZEISS-style order-fulfillment saga (durable workflow + service invocation + compensation) | Saga workflow, all activities, and `ServerApp` are pure: `execute` receives `DaprCapability` per call, so no capability is captured in a field |
-| 10 | `10-cryptography/` | `10-cryptography-shell/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability` over immutable `ArraySeq[Byte]`; one-shot client |
-| 11 | `11-jobs/` | `11-jobs-shell/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability` (client) + `JobRoute` (trigger); handler persists payload to state |
-| 12 | `12-conversation/` | `12-conversation-shell/` | LLM conversation (alpha1 `converse` + alpha2 `chat`) | `ConversationCapability` against the `conversation.echo` component |
-| 14 | `14-orders/`, `14-pricing/` | matching `-shell/` modules | Observability: `OrderWorkflow` → service invocation (pricing) + pub/sub; daprd OTLP tracing into SigNoz; workflow state in the Diagrid dashboard | I/O activities receive `DaprCapability` per call (invoke pricing / publish events); the audit handler stays pure — `println` is `@rejectSafe` under safe mode |
+| 1 | `01-hello-state/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` | reified |
+| 2 | `02-secrets-config/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures | reified |
+| 3 | `03-hello-pubsub/` | Pub/sub publish + subscribe | `PubSubCapability.publish` direct; handler captures the capability | reified |
+| 4 | `04-service-invocation/` | HTTP service-to-service calls | `ServiceInvocationCapability.invoke` + typed `InvocationRoute` handlers | reified |
+| 5 | `05-distributed-lock/` | Distributed lock | Lock capability ensures try/unlock pairing | reified |
+| 6 | `06-actors/` | Virtual actors, timers, reminders | `ActorContext` per-invocation capability; `ActorCapability.invoke` client | reified |
+| 7 | `07-workflows/` | Durable workflows, saga, compensation | `WorkflowContext` deterministic replay; `callActivity` returns `Task[O]` | reified |
+| 8 | `08-cryptography/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability.encryptString`/`encrypt` over immutable `ArraySeq[Byte]` | reified |
+| 9 | `09-jobs/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability.scheduleOnce` (client) + `JobRoute` (trigger) | reified |
+| 10 | `10-conversation/` | LLM conversation (alpha1 + alpha2) | `ConversationCapability` against the `conversation.echo` component | reified |
+| 11 | `11-bindings/` | Output + input on one bidirectional connector | `BindingsCapability` invoke / invokeOneWay (output) + `BindingRoute` (input) | reified |
+| 12 | `12-scan-gateway/`, `12-scan-worker/`, `12-scan-results/` | Grafana-style fan-out pub/sub pipeline with a real dead-letter queue | Three services; derived publishers (`PubSub.derive`), subscriptions, and routes; dead-letter topic counted in the dashboard | derived |
+| 13 | `13-order-service/`, `13-inventory-service/`, `13-payment-service/`, `13-shipping-service/` | ZEISS-style order-fulfillment saga (durable workflow + service invocation + compensation) | Derived clients (`ServiceInvocation.derive`) + activities (`WorkflowActivities`/`WorkflowActivityCalls.derive`); saga, activities, and `ServerApp` stay pure | derived |
+| 14 | `14-orders/`, `14-pricing/` | Observability: `OrderWorkflow` → service invocation (pricing) + pub/sub; daprd OTLP tracing into SigNoz; workflow state in the Diagrid dashboard | Derived activities + subscriptions; I/O activities receive `DaprCapability` per call; the audit handler stays pure — `println` is `@rejectSafe` | derived |
 
 > The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
 > SigNoz by asserting the funnel collector's own pipeline counters

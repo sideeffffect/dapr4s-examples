@@ -1,7 +1,6 @@
 package hellopubsub
 
 import dapr4s.*
-import dapr4s.derivation.*
 
 val PubSubComponent = PubSubName("pubsub")
 val MessageTopic = Topic("HelloTopic")
@@ -29,14 +28,8 @@ object SubscriberApp:
         ),
       )
 
-// The topics are described as a trait; dapr4s.derivation implements the publishers.
-// Each method name maps verbatim to its Topic (PascalCase, so no `@name` override).
-trait Topics:
-  def HelloTopic(msg: Message)(using PubSubCapability, JsonCodec[Message]): Unit
-lazy val Topics: Topics = PubSub.derive[Topics]
-
 object PublisherApp:
   def apply()(using DaprCapability, JsonCodec[Message]): Unit =
     DaprCapability.pubsub(PubSubComponent):
-      val topics = Topics
-      for i <- 1 to 5 do topics.HelloTopic(Message(from = "publisher", text = "hello world", sequenceNo = i))
+      for i <- 1 to 5 do
+        PubSubCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))

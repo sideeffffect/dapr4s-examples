@@ -1,7 +1,6 @@
 package actors
 
 import dapr4s.*
-import dapr4s.derivation.*
 import scala.concurrent.duration.FiniteDuration
 
 case class IncrBy(amount: Int)
@@ -91,17 +90,12 @@ object CounterActorApp:
 
 val DemoActorId = ActorId("counter-1")
 
-// The actor's methods are described as a trait; dapr4s.derivation implements the client.
-// Each method name maps verbatim to its ActorMethodName.
-trait CounterClient:
-  def get()(using ActorCapability, JsonCodec[CounterState]): CounterState
-  def increment(by: IncrBy)(using ActorCapability, JsonCodec[IncrBy], JsonCodec[CounterState]): CounterState
-  def startTimer()(using ActorCapability, JsonCodec[CounterState]): CounterState
-lazy val CounterClient: CounterClient = Actor.derive[CounterClient]
-
+// The client addresses an actor instance via DaprCapability.actor(type, id); each method maps
+// to an ActorMethodName. `invoke[In](method, data)[Out]` carries a body, `invoke[Out](method)`
+// is the no-argument form.
 def driverGetState(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.get()
+    ActorCapability.invoke[CounterState](ActorMethodName("get"))
 
 def driverIncrement(id: ActorId, by: IncrBy)(using
     DaprCapability,
@@ -109,8 +103,8 @@ def driverIncrement(id: ActorId, by: IncrBy)(using
     JsonCodec[CounterState],
 ): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.increment(by)
+    ActorCapability.invoke(ActorMethodName("increment"), by)[CounterState]
 
 def driverStartTimer(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    CounterClient.startTimer()
+    ActorCapability.invoke[CounterState](ActorMethodName("startTimer"))

@@ -1073,6 +1073,63 @@ Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
 
 ---
 
+## A note before we start: deriving the wiring
+
+The eleven examples **hand-wrote** the reified model — explicit `InvocationRoute[...]`
+lists, `PubSubCapability.publish` calls, `extends WorkflowActivity`. The case studies that
+follow (12–14) use dapr4s's **derivation** instead: describe a trait, object, or class, and
+`dapr4s.derivation` generates the facade. *Same types, same capture-checking, less
+boilerplate.* (Distinct from JSON-codec derivation — this derives the *routes/clients*.)
+
+```scala
+// before — the explicit caller from example 4
+ServiceInvocationCapability
+  .invoke[GreetRequest](AppId("greeting-service"), InvocationMethodName("greet"), req)[GreetResponse]
+
+// after — describe it once, let dapr4s implement it
+trait GreetingService:
+  def greet(req: GreetRequest)(using ServiceInvocationCapability,
+      JsonCodec[GreetRequest], JsonCodec[GreetResponse]): GreetResponse
+def GreetingService(appId: AppId): GreetingService = ServiceInvocation.derive[GreetingService](appId)
+
+GreetingService(AppId("greeting-service")).greet(req)   // method name → InvocationMethodName; types preserved
+```
+
+A **transparent inline macro** expands to the *exact* reified calls above — no runtime
+layer, the same `^{…}` capture-checking, codecs still passed in from the shell. The
+capability arrives **per call**, so derivation **can't hide effects**: it generates the
+wiring, never the effect.
+
+---
+
+## One trait per building block
+
+The Scala **method name maps verbatim** to the Dapr name (override with `@name("…")`); the
+capability and codecs still arrive per call. A plain `X.derive[T]` factory next to the trait
+is all you need.
+
+| Engine | Method → name | Engine | Method → name |
+|---|---|---|---|
+| `ServiceInvocation` / `Bindings` / `Actor` | invoke | `PubSub` | publish → `Topic` |
+| `Secrets` / `Configuration` | get → key | `Crypto` | encrypt → `CryptoKeyName` |
+| `Jobs` | schedule → `JobName` | `Workflow` | start → `WorkflowName` |
+| `State` / `ActorState` | `def x` / `def x_=` | `WorkflowEvents` | waitForExternalEvent |
+| `WorkflowActivities` | class → activity list | `WorkflowActivityCalls` | method → `callActivity` |
+
+```scala
+trait Counter:                                   // State / ActorState: getter + setter
+  def count(using StateCapability, JsonCodec[Int]): Option[Int]
+  def count_=(v: Int)(using StateCapability, JsonCodec[Int]): Unit
+
+val routes = InvocationRoutes.derive[GatewayRoutes.type]   // server side: an object of methods → routes
+```
+
+> The explicit reified API stays the foundation; derivation is an opt-in convenience on top.
+> (A *macro-annotation* form was tried and dropped — Scala 3 annotations expand after the
+> typer, so generated members would be invisible in the same compilation run.)
+
+---
+
 <!-- _class: section-break -->
 
 # Case study 1
@@ -1158,18 +1215,17 @@ building block** — config or one typed value, not bespoke plumbing.
 
 ---
 
-## The gateway — fully derived (publisher + route)
+## The gateway — submit & publish
 
-The last three examples are written in the **derived** style: the publisher and the
-invocation routes are generated from trait/object descriptions — no `PubSubCapability.publish`,
-no `InvocationRoute[...]` list.
+The gateway accepts a scan submission, publishes a `ScanRequested` event for the worker
+fleet, and acks the caller. The `ScanTopics` publisher and the invocation route are derived:
 
 ```scala
-trait ScanTopics:                                              // method name (verbatim) → Topic
+trait ScanTopics:                                              // ScanRequested → Topic("ScanRequested")
   def ScanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
 lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
 
-object GatewayRoutes:                                          // method → InvocationRoute
+object GatewayRoutes:
   def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
     ScanTopics.ScanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
@@ -1186,12 +1242,12 @@ stands in for the SQS binding — it even publishes a **duplicate** `scan-3` and
 
 ---
 
-## The worker — idempotency, retry, DLQ (derived wiring)
+## The worker — idempotency, retry, DLQ
 
-The subscription (topic + dead-letter) is **derived** — the method name *is* the topic
-(PascalCase, no `@name`), with `@deadLetter` for the DLQ; the handler body keeps the explicit
-`StateCapability` calls — dedup/retry over *dynamic* keys (`seen-`/`attempt-<scanId>`) is
-genuine logic with no derived form.
+The worker dedups on a `seen-` marker, retries transient failures, and lets poison messages
+exhaust the retry policy into the dead-letter topic. The subscription's topic and its
+`@deadLetter` come from the method; the handler body is genuine logic over the *dynamic*
+`seen-`/`attempt-<scanId>` keys.
 
 ```scala
 object WorkerRoutes:
@@ -1207,7 +1263,7 @@ object WorkerRoutes:
       StateCapability.save(attemptKey(req.scanId), attempts + 1)
       if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry          // transient
       else
-        ScanTopics.derive.ScanCompleted(scan(req))                          // derived publish
+        ScanTopics.ScanCompleted(scan(req))                                 // derived publisher
         StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
         SubscriptionResult.Success                                          // ack
 
@@ -1304,13 +1360,11 @@ the compensations still run.
 ## Why this whole saga stays *pure*
 
 Activities are a **plain class of methods** — no `extends WorkflowActivity`, no manual
-registration. `WorkflowActivities.derive[OrderActivities]` reifies one activity per
-method. Each method receives a `DaprCapability` **per call**; nothing is captured into a
+registration. Each method receives a `DaprCapability` **per call**; nothing is captured into a
 field, nothing is **stored** in the long-lived activity list, so **safe mode accepts the
 activities as-is** — no `@assumeSafe`.
 
-The cross-service call itself is **derived** too — an `InventoryClient` trait whose method
-name maps to the callee's `InvocationMethodName`, so no `ServiceInvocationCapability.invoke`:
+The cross-service call is a derived `InventoryClient`; the activity just calls it:
 
 ```scala
 trait InventoryClient:
@@ -1322,7 +1376,7 @@ class OrderActivities:                                   // just a class — met
   def reserve(o: OrderRequest)(using DaprCapability,
       JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult =
     DaprCapability.invoker:
-      InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
+      InventoryClient(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 ```
 
 The **pure** `13-order-service` module holds the entire saga — DTOs, derived clients,
@@ -1356,13 +1410,9 @@ class OrderProcessingWorkflow extends Workflow:
 The nested `if/else` **is** the state-machine diagram. Each activity call returns
 a `Task[O]` that captures the exclusive `WorkflowContext` (`Task[O]^{ctx}`), so
 capture checking forbids it from escaping `run`. The whole state machine stays
-inside the run — that's what keeps replay deterministic.
-
-> **Fully derived now:** activities are a plain class fed to `WorkflowActivities.derive[OrderActivities]`,
-> and the typed caller `OrderActivityCalls` is derived *from that class* (`WorkflowActivityCalls.Derived`)
-> — each method forwards to its activity by name, types preserved. The only reified piece left is the
-> workflow **orchestration body** (`extends Workflow` / `run`) — and that's the part you *want* to read
-> literally, because it *is* the state machine.
+inside the run — that's what keeps replay deterministic. The only piece written out
+literally is the orchestration body — and that's the part you *want* to read literally,
+because it *is* the saga.
 
 ---
 
@@ -1497,68 +1547,6 @@ flowchart LR
 
 The five classic distributed-systems mistakes all hit the same wall — and bounce
 off as a red squiggle in your editor, not a 3 a.m. page.
-
----
-
-## Optional sugar: derive the wiring from a trait
-
-Every example so far hand-wrote the reified model — that's the foundation. For the
-*repetitive* call sites, `dapr4s.derivation` can generate the facade from a trait you
-describe. Same types, same capture-checking, less boilerplate. (Distinct from JSON-codec
-derivation — this derives the *routes/clients*.)
-
-```scala
-// before — the explicit caller from example 4
-ServiceInvocationCapability
-  .invoke[GreetRequest](AppId("greeting-service"), InvocationMethodName("greet"), req)[GreetResponse]
-
-// after — describe it once, let dapr4s implement it
-trait GreetingService:
-  def greet(req: GreetRequest)(using ServiceInvocationCapability,
-      JsonCodec[GreetRequest], JsonCodec[GreetResponse]): GreetResponse
-def GreetingService(appId: AppId): GreetingService = ServiceInvocation.derive[GreetingService](appId)
-
-val svc = GreetingService(AppId("greeting-service"))
-svc.greet(req)            // method name → InvocationMethodName; types preserved
-```
-
----
-
-## One trait per building block
-
-The Scala **method name maps verbatim** to the Dapr name (override with `@name("…")`);
-the capability and codecs still arrive per call.
-
-| Engine | Method → name | Engine | Method → name |
-|---|---|---|---|
-| `ServiceInvocation` / `Bindings` / `Actor` | invoke | `PubSub` | publish → `Topic` |
-| `Secrets` / `Configuration` | get → key | `Crypto` | encrypt → `CryptoKeyName` |
-| `Jobs` | schedule → `JobName` | `Workflow` | start → `WorkflowName` |
-| `State` / `ActorState` | `def x` / `def x_=` | `WorkflowEvents` | waitForExternalEvent |
-| `WorkflowActivities` | class → activity list | `WorkflowActivityCalls` | method → `callActivity` |
-
-```scala
-trait Counter:                                   // State / ActorState: getter + setter
-  def count(using StateCapability, JsonCodec[Int]): Option[Int]
-  def count_=(v: Int)(using StateCapability, JsonCodec[Int]): Unit
-
-val defn = ActorDefinitions.derive[CounterActor]  // server side: a whole actor class →
-                                                  // ActorDefinition (@reminder / @timer routes)
-```
-
----
-
-## Sugar, not a new model
-
-- A **transparent inline macro** expands to the *exact* reified calls from Part 5 — no
-  runtime layer, the same `^{…}` capture-checking, codecs still passed in from the shell.
-- The capability arrives **per call** (capture checking forbids capturing an
-  `ExclusiveCapability`) — so derivation **can't hide effects**; the wiring is generated, not the effect.
-- A plain `X.derive[T]` factory next to the trait (`lazy val`, or a `def` taking `appId` for
-  service invocation) is all you need. A *macro-annotation* form was tried and dropped — Scala 3
-  annotations expand after the typer, so generated members are invisible in the same compilation run.
-
-> The explicit reified API stays the foundation; derivation is an opt-in convenience on top.
 
 ---
 
