@@ -25,7 +25,28 @@ receivers:
     include:
       - /var/lib/docker/containers/*/*.log
     start_at: end
-    include_file_path: true
+    operators:
+      # 1. Unwrap the Docker json-file envelope ({"log","stream","time"}): set the
+      #    body to the real log line and lift the stream into log.iostream. Without
+      #    this, SigNoz shows the raw envelope as the log body.
+      - type: container
+        format: docker
+        add_metadata_from_filepath: false
+      # 2. daprd emits structured JSON logs; parse them into attributes (app_id,
+      #    scope, instance, level, …) and derive severity. Plain-text lines (e.g. the
+      #    durabletask stderr output) don't start with "{" and are left untouched.
+      - type: json_parser
+        if: 'body matches "^\\{"'
+        parse_from: body
+        parse_to: attributes
+        severity:
+          parse_from: attributes.level
+      # 3. Promote the human-readable message to the log body so the Logs view shows
+      #    "Workflow Actor … completed" instead of the raw JSON.
+      - type: move
+        if: 'attributes.msg != nil'
+        from: attributes.msg
+        to: body
 
 processors:
   batch: {}
