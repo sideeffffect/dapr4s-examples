@@ -46,22 +46,36 @@ receivers:
         to: attributes["log.iostream"]
       - type: remove
         field: attributes.time
-      # 2. daprd emits structured JSON logs; parse them into attributes (app_id,
-      #    scope, instance, …) and derive severity from `level`. Plain-text lines
-      #    (e.g. the durabletask stderr output) don't start with "{" and are left
-      #    as-is.
+      # 2. Many containers (daprd with -log-as-json, ClickHouse, …) emit structured
+      #    JSON logs in differing shapes. Parse any line that starts with "{" into
+      #    attributes and derive severity from `level`, mapping the capitalised
+      #    spellings (ClickHouse's "Information"/"Warning"/…) onto the standard
+      #    levels. Plain-text lines (e.g. the durabletask JUL output) don't start
+      #    with "{" and are left as-is.
       - type: json_parser
         if: 'body matches "^\\{"'
         parse_from: body
         parse_to: attributes
         severity:
           parse_from: attributes.level
-      # 3. Promote the human-readable message to the body, then drop the fields now
-      #    represented as first-class record fields so they aren't shown twice
-      #    (severity vs `level`, timestamp vs `time`).
+          mapping:
+            info: information
+            warn: warning
+            error: [error, critical]
+            fatal: fatal
+            debug: debug
+      # 3. Promote the human-readable message to the body. daprd uses `msg`; many
+      #    others (ClickHouse, …) use `message`. Then drop the fields now represented
+      #    as first-class record fields so they aren't shown twice (severity vs
+      #    `level`, timestamp vs `time`/`date_time*`). Everything else stays as an
+      #    attribute, i.e. a column you can pin in SigNoz.
       - type: move
         if: 'attributes.msg != nil'
         from: attributes.msg
+        to: body
+      - type: move
+        if: 'attributes.message != nil'
+        from: attributes.message
         to: body
       - type: remove
         if: 'attributes.level != nil'
@@ -69,6 +83,12 @@ receivers:
       - type: remove
         if: 'attributes.time != nil'
         field: attributes.time
+      - type: remove
+        if: 'attributes.date_time_utc != nil'
+        field: attributes.date_time_utc
+      - type: remove
+        if: 'attributes.date_time != nil'
+        field: attributes.date_time
       - type: remove
         if: 'attributes.type != nil'
         field: attributes.type
