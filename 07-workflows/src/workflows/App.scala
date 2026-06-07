@@ -10,6 +10,14 @@ case class ShipmentResult(dispatched: Boolean, trackingId: String)
 case class OrderResult(success: Boolean, message: String)
 case class ProcessOrderResult(orderId: String, timedOut: Boolean, result: Option[OrderResult])
 
+/** Outcome of the lifecycle demo: the live status observed while the instance was paused on the approval gate, plus the
+  * final result once the gate was unblocked.
+  */
+case class ApprovalOutcome(orderId: String, pausedStatus: Option[WorkflowStatus], result: Option[OrderResult])
+
+// External event the approval workflow blocks on; the client delivers it with `id.raiseEvent(ApprovalEvent, ...)`.
+val ApprovalEvent: EventName = EventName("approval")
+
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // WorkflowContext is a per-run ExclusiveCapability: Task[O] values from
 // callActivity cannot be awaited outside the workflow run method.
@@ -77,6 +85,31 @@ class OrderProcessingWorkflow(using
           WorkflowContext.complete(OrderResult(false, "dispatch failed"))
         else WorkflowContext.complete(OrderResult(true, s"shipped: ${shipment.trackingId}"))
 
+// ── Workflow (human-in-the-loop gate) ─────────────────────────────────────────
+// Blocks on an external "approval" event before shipping. While it waits the
+// instance sits in Running, which is what makes the client-side lifecycle
+// operations (getStatus / suspend / resume / raiseEvent / terminate) observable.
+
+class ApprovalOrderWorkflow(using
+    JsonCodec[OrderRequest],
+    JsonCodec[ShipmentResult],
+    JsonCodec[OrderResult],
+    JsonCodec[Boolean],
+) extends Workflow:
+  def run(using WorkflowContext): Unit =
+    val order = WorkflowContext
+      .getInput[OrderRequest]
+      .getOrElse:
+        throw RuntimeException("no input")
+
+    // Park here until a client raises ApprovalEvent. No timeout: the demo always
+    // either approves/rejects via raiseEvent or kills the instance via terminate.
+    val approved = WorkflowContext.waitForExternalEvent[Boolean](ApprovalEvent).await()
+    if !approved then WorkflowContext.complete(OrderResult(false, "approval rejected"))
+    else
+      val shipment = WorkflowContext.callActivity[DispatchShipment](order).await()
+      WorkflowContext.complete(OrderResult(true, s"shipped after approval: ${shipment.trackingId}"))
+
 // ── Server app ────────────────────────────────────────────────────────────────
 
 object ServerApp:
@@ -87,9 +120,10 @@ object ServerApp:
       JsonCodec[ShipmentResult],
       JsonCodec[OrderResult],
       JsonCodec[Unit],
+      JsonCodec[Boolean],
   ): DaprApp =
     DaprApp(
-      workflows = List(new OrderProcessingWorkflow),
+      workflows = List(new OrderProcessingWorkflow, new ApprovalOrderWorkflow),
       activities = List(
         new ReserveInventory,
         new CancelReservation,
@@ -108,12 +142,58 @@ def processOrder(
 )(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): ProcessOrderResult =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    val snapshot = WorkflowCapability.waitForCompletion(id, timeout)
+    val snapshot = id.waitForCompletion(timeout)
     snapshot match
       case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
       case Some(snap) =>
         val result = snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
+        // Completed instances linger in the state store; drop this one fluently.
+        id.purge()
         ProcessOrderResult(order.orderId, timedOut = false, result = result)
+
+// Walks the full instance lifecycle through the fluent WorkflowInstanceId
+// extension methods — start → getStatus → suspend → resume → raiseEvent →
+// waitForCompletion → purge — each reading as a method on `id` rather than
+// `WorkflowCapability.op(id, ...)`.
+def runApproval(
+    order: OrderRequest,
+    name: WorkflowName,
+    approve: Boolean,
+    timeout: FiniteDuration,
+)(using
+    DaprCapability,
+    JsonCodec[OrderRequest],
+    JsonCodec[OrderResult],
+    JsonCodec[Boolean],
+): ApprovalOutcome =
+  DaprCapability.workflow:
+    val id = WorkflowCapability.start(name, order)
+
+    // The workflow is parked on the approval gate; suspend then resume it to show
+    // the operations round-trip, and capture the live status in between.
+    id.suspend()
+    val pausedStatus = id.getStatus.map(_.status)
+    id.resume()
+
+    // Deliver the event the workflow is blocked on, then await and clean up.
+    id.raiseEvent(ApprovalEvent, approve)
+    val result = id.waitForCompletion(timeout).flatMap(_.serializedOutput).flatMap(_.decode[OrderResult].toOption)
+    id.purge()
+
+    ApprovalOutcome(order.orderId, pausedStatus, result)
+
+// Demonstrates the abort path: terminate an instance that is still waiting for
+// approval, observe its status, then purge it — all fluently on `id`.
+def cancelApproval(
+    order: OrderRequest,
+    name: WorkflowName,
+)(using DaprCapability, JsonCodec[OrderRequest]): Option[WorkflowStatus] =
+  DaprCapability.workflow:
+    val id = WorkflowCapability.start(name, order)
+    id.terminate()
+    val status = id.getStatus.map(_.status)
+    id.purge()
+    status
 
 object DriverApp:
   def apply(

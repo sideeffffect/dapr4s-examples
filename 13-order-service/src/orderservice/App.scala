@@ -89,7 +89,7 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
     JsonCodec[OrderResult],
 ): ProcessOrderResult =
   val id = OrderWorkflows.derive.start(order)
-  WorkflowCapability.waitForCompletion(id, timeout) match
+  id.waitForCompletion(timeout) match
     case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
     case Some(snap) =>
       ProcessOrderResult(

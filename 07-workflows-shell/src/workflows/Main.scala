@@ -20,6 +20,7 @@ object Codecs:
   given JsonCodec[PaymentResult] = upickleCodec(using upickle.default.macroRW)
   given JsonCodec[ShipmentResult] = upickleCodec(using upickle.default.macroRW)
   given JsonCodec[OrderResult] = upickleCodec(using upickle.default.macroRW)
+  given JsonCodec[Boolean] = upickleCodec[Boolean]
   given JsonCodec[Unit] with
     def encode(value: Unit): String = "null"
     def decode(json: String | Null): Either[JsonDecodeException, Unit] = Right(())
@@ -55,3 +56,31 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
         val msg = r.result.map(x => s"success=${x.success}, message='${x.message}'").getOrElse("(no output)")
         println(s"\nOrder ${r.orderId}: $msg")
   println("\n[workflow-driver] done.")
+
+// Drives ApprovalOrderWorkflow through the fluent WorkflowInstanceId lifecycle
+// operations: approve, reject, and cancel-before-approval paths.
+@main def workflowLifecycle(): Unit =
+  println("=== 07 workflows: instance lifecycle (fluent WorkflowInstanceId ops) ===\n")
+  val name = WorkflowName("ApprovalOrderWorkflow")
+  Dapr(daprConfigFromEnv(defaultAppPort = 8087)).run:
+    val approved = runApproval(
+      OrderRequest("ORD-A01", item = "widget", quantity = 2, budget = 30.0),
+      name,
+      approve = true,
+      timeout = 30.seconds,
+    )
+    val rejected = runApproval(
+      OrderRequest("ORD-A02", item = "gadget", quantity = 1, budget = 40.0),
+      name,
+      approve = false,
+      timeout = 30.seconds,
+    )
+    val canceled = cancelApproval(OrderRequest("ORD-A03", item = "gizmo", quantity = 1, budget = 10.0), name)
+
+    def render(o: ApprovalOutcome): String =
+      val res = o.result.map(x => s"success=${x.success}, message='${x.message}'").getOrElse("(no output)")
+      s"${o.orderId}: paused=${o.pausedStatus.getOrElse("?")} -> $res"
+    println(s"\nApproved  ${render(approved)}")
+    println(s"Rejected  ${render(rejected)}")
+    println(s"Canceled  ORD-A03: terminal status=${canceled.getOrElse("?")}")
+  println("\n[workflow-lifecycle] done.")

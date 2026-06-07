@@ -887,7 +887,7 @@ def processOrder(order: OrderRequest, name: WorkflowName, timeout: FiniteDuratio
                 (using DaprCapability, ...): ProcessOrderResult =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    WorkflowCapability.waitForCompletion(id, timeout) match
+    id.waitForCompletion(timeout) match
       case None       => ProcessOrderResult(order.orderId, timedOut = true, None)
       case Some(snap) => ... snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
 ```
