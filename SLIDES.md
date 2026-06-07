@@ -1395,6 +1395,24 @@ flowchart LR
 
 ---
 
+## The Diagrid dashboard — live workflow state
+
+![Diagrid dashboard listing OrderWorkflow executions, each COMPLETED, for app `orders`, with start/end times](images/screenshot-diagrid-workflows.png)
+
+*Every `OrderWorkflow` instance, inspectable — status, inputs/outputs, and event
+history — read straight from the Redis actor state store. No code instrumentation.*
+
+---
+
+## SigNoz — the service map, from the traces
+
+![SigNoz service map showing orders calling pricing and publishing to pubsub](images/screenshot-signoz-service-map.png)
+
+*Built purely from the OTLP spans Dapr emits: `orders` → `pricing` (service
+invocation) and `orders` → `pubsub`. Traces, metrics, and logs all land here.*
+
+---
+
 <!-- _class: section-break -->
 
 # Part 6
