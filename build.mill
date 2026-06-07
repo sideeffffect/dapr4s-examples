@@ -16,7 +16,7 @@ object nightliesJvmWorker extends JvmWorkerModule:
   }
 
 val ScalaVersion = "3.10.0-RC1-bin-20260607-dec42ae-NIGHTLY"
-val Dapr4sVersion = "0.15.0"
+val Dapr4sVersion = "0.15.1"
 
 trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
