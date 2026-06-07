@@ -26,27 +26,52 @@ receivers:
       - /var/lib/docker/containers/*/*.log
     start_at: end
     operators:
-      # 1. Unwrap the Docker json-file envelope ({"log","stream","time"}): set the
-      #    body to the real log line and lift the stream into log.iostream. Without
-      #    this, SigNoz shows the raw envelope as the log body.
-      - type: container
-        format: docker
-        add_metadata_from_filepath: false
+      # 1. Unwrap the Docker json-file envelope {"log","stream","time"}: take the
+      #    envelope time as the record timestamp, move the real log line into the
+      #    body, keep the stream as log.iostream, and drop the envelope time. (We
+      #    parse the envelope manually rather than via the `container` operator,
+      #    whose built-in time parsing throws "failed to parse time" when followed by
+      #    other operators in this collector version.)
+      - type: json_parser
+        parse_from: body
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: '2006-01-02T15:04:05.999999999Z07:00'
+      - type: move
+        from: attributes.log
+        to: body
+      - type: move
+        from: attributes.stream
+        to: attributes["log.iostream"]
+      - type: remove
+        field: attributes.time
       # 2. daprd emits structured JSON logs; parse them into attributes (app_id,
-      #    scope, instance, level, …) and derive severity. Plain-text lines (e.g. the
-      #    durabletask stderr output) don't start with "{" and are left untouched.
+      #    scope, instance, …) and derive severity from `level`. Plain-text lines
+      #    (e.g. the durabletask stderr output) don't start with "{" and are left
+      #    as-is.
       - type: json_parser
         if: 'body matches "^\\{"'
         parse_from: body
         parse_to: attributes
         severity:
           parse_from: attributes.level
-      # 3. Promote the human-readable message to the log body so the Logs view shows
-      #    "Workflow Actor … completed" instead of the raw JSON.
+      # 3. Promote the human-readable message to the body, then drop the fields now
+      #    represented as first-class record fields so they aren't shown twice
+      #    (severity vs `level`, timestamp vs `time`).
       - type: move
         if: 'attributes.msg != nil'
         from: attributes.msg
         to: body
+      - type: remove
+        if: 'attributes.level != nil'
+        field: attributes.level
+      - type: remove
+        if: 'attributes.time != nil'
+        field: attributes.time
+      - type: remove
+        if: 'attributes.type != nil'
+        field: attributes.type
 
 processors:
   batch: {}

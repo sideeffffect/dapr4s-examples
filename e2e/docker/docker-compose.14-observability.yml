@@ -52,6 +52,7 @@ services:
     command:
       - "./daprd"
       - "-app-id=orders"
+      - "-log-as-json"
       - "-app-port=8080"
       - "-dapr-http-port=3500"
       - "-dapr-grpc-port=50001"
@@ -94,6 +95,7 @@ services:
     command:
       - "./daprd"
       - "-app-id=pricing"
+      - "-log-as-json"
       - "-app-port=8080"
       - "-dapr-http-port=3500"
       - "-dapr-grpc-port=50001"
