@@ -1302,12 +1302,13 @@ the compensations still run.
 
 ## Why this whole saga stays *pure*
 
-`WorkflowActivity.execute` receives a `DaprCapability` **per call** — the runtime
-hands it in for the duration of the invocation. Nothing is captured into a field,
-nothing is **stored** in the long-lived `List[WorkflowActivity]`, so **safe mode
-accepts the activities as-is** — no `@assumeSafe`:
+Activities are a **plain class of methods** — no `extends WorkflowActivity`, no manual
+registration. `WorkflowActivities.derive[OrderActivities]` reifies one activity per
+method. Each method receives a `DaprCapability` **per call**; nothing is captured into a
+field, nothing is **stored** in the long-lived activity list, so **safe mode accepts the
+activities as-is** — no `@assumeSafe`.
 
-The cross-service call itself is **derived** — a `InventoryClient` trait whose method
+The cross-service call itself is **derived** too — an `InventoryClient` trait whose method
 name maps to the callee's `InvocationMethodName`, so no `ServiceInvocationCapability.invoke`:
 
 ```scala
@@ -1316,9 +1317,9 @@ trait InventoryClient:
       JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult
 object InventoryClient extends ServiceInvocation.Derived[InventoryClient]
 
-class ReserveActivity(using JsonCodec[OrderRequest], JsonCodec[ReservationResult], JsonCodec[ReserveRequest])
-    extends WorkflowActivity[OrderRequest, ReservationResult]:
-  def execute(o: OrderRequest)(using DaprCapability): ReservationResult =
+class OrderActivities:                                   // just a class — methods, not subclasses
+  def reserve(o: OrderRequest)(using DaprCapability,
+      JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult =
     DaprCapability.invoker:
       InventoryClient.derive(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 ```
@@ -1332,28 +1333,35 @@ activities, the orchestration, and the workflow-client driver. The downstream se
 ## The orchestration & its compensations (pure)
 
 ```scala
+trait OrderActivityCalls:                                // one typed method per activity
+  def reserve(o: OrderRequest)(using ctx: WorkflowContext): Task[ReservationResult]^{ctx}
+  // … charge, dispatch, release, refund
+object OrderActivityCalls extends WorkflowActivityCalls.Derived[OrderActivityCalls, OrderActivities]
+
 class OrderProcessingWorkflow extends Workflow:
   def run(using WorkflowContext): Unit =
+    val acts  = OrderActivityCalls.derive
     val order = WorkflowContext.getInput[OrderRequest].getOrElse(throw RuntimeException("no input"))
-    val reservation = WorkflowContext.callActivity[ReserveActivity](order).await()
+    val reservation = acts.reserve(order).await()
     if !reservation.reserved then WorkflowContext.complete(OrderResult(false, "out of stock"))
     else
-      val payment = WorkflowContext.callActivity[ChargeActivity](order).await()
+      val payment = acts.charge(order).await()
       if !payment.charged then
-        WorkflowContext.callActivity[ReleaseActivity](releaseOf(reservation, order)).await()  // compensate
+        acts.release(releaseOf(reservation, order)).await()                       // compensate
         WorkflowContext.complete(OrderResult(false, "payment declined"))
       else ... // dispatch, else refund + release, else "shipped ✓"
 ```
 
-The nested `if/else` **is** the state-machine diagram. Each `callActivity` returns
+The nested `if/else` **is** the state-machine diagram. Each activity call returns
 a `Task[O]` that captures the exclusive `WorkflowContext` (`Task[O]^{ctx}`), so
 capture checking forbids it from escaping `run`. The whole state machine stays
 inside the run — that's what keeps replay deterministic.
 
-> Workflow **hosting** (`extends Workflow` / `WorkflowActivity[I,O]` + `callActivity[A]`) is the
-> one piece with no derived form — the orchestration must name the activity *type*, which a macro
-> can't synthesise-and-reference in one compilation run. Clients, routes, and the `start` call
-> around it are all derived; the orchestration body stays reified by necessity.
+> **Fully derived now:** activities are a plain class fed to `WorkflowActivities.derive[OrderActivities]`,
+> and the typed caller `OrderActivityCalls` is derived *from that class* (`WorkflowActivityCalls.Derived`)
+> — each method forwards to its activity by name, types preserved. The only reified piece left is the
+> workflow **orchestration body** (`extends Workflow` / `run`) — and that's the part you *want* to read
+> literally, because it *is* the state machine.
 
 ---
 
@@ -1526,6 +1534,7 @@ the capability and codecs still arrive per call.
 | `Secrets` / `Configuration` | get → key | `Crypto` | encrypt → `CryptoKeyName` |
 | `Jobs` | schedule → `JobName` | `Workflow` | start → `WorkflowName` |
 | `State` / `ActorState` | `def x` / `def x_=` | `WorkflowEvents` | waitForExternalEvent |
+| `WorkflowActivities` | class → activity list | `WorkflowActivityCalls` | method → `callActivity` |
 
 ```scala
 trait Counter:                                   // State / ActorState: getter + setter
