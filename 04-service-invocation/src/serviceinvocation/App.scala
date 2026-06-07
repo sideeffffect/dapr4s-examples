@@ -1,6 +1,7 @@
 package serviceinvocation
 
 import dapr4s.*
+import dapr4s.derivation.*
 
 case class GreetRequest(name: String, language: String = "en")
 case class GreetResponse(greeting: String, from: String)
@@ -60,6 +61,17 @@ object CalleeApp:
 
 // ── Caller ────────────────────────────────────────────────────────────────────
 
+// The remote service is described as a trait; dapr4s.derivation implements it. Each method
+// name maps verbatim to its InvocationMethodName, so `greet` → "greet" and `stats` → "stats".
+trait GreetingService:
+  def greet(req: GreetRequest)(using
+      ServiceInvocationCapability,
+      JsonCodec[GreetRequest],
+      JsonCodec[GreetResponse],
+  ): GreetResponse
+  def stats()(using ServiceInvocationCapability, JsonCodec[StatsResponse]): StatsResponse
+object GreetingService extends ServiceInvocation.Derived[GreetingService]
+
 object CallerApp:
   def apply()(using
       DaprCapability,
@@ -68,7 +80,7 @@ object CallerApp:
       JsonCodec[StatsResponse],
   ): CallerResult =
     DaprCapability.invoker:
-      val target = AppId("greeting-service")
+      val svc = GreetingService.derive(AppId("greeting-service"))
       val requests = List(
         GreetRequest("Alice", "en"),
         GreetRequest("Bob", "es"),
@@ -76,12 +88,6 @@ object CallerApp:
         GreetRequest("Dave", "de"),
         GreetRequest("Eve", "jp"),
       )
-      val greetings = requests.map: req =>
-        ServiceInvocationCapability.invoke[GreetRequest](
-          target,
-          InvocationMethodName("greet"),
-          req,
-          HttpMethod.Post,
-        )[GreetResponse]
-      val s = ServiceInvocationCapability.invoke[StatsResponse](target, InvocationMethodName("stats"))
+      val greetings = requests.map(svc.greet)
+      val s = svc.stats()
       CallerResult(greetings, s)
