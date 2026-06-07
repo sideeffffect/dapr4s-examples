@@ -7,7 +7,7 @@ import dapr4s.derivation.*
 // The headline workload for the observability demo. One OrderWorkflow weaves
 // together three building blocks so a single trace tree spans them all:
 //   workflow → activities → (QuotePrice invokes the pricing service) → publishes
-//   an order-completed event → an audit subscription consumes it.
+//   an OrderCompleted event → an audit subscription consumes it.
 // Workflow instances are visible in the Diagrid dashboard (Redis actor store);
 // the full span tree, Dapr metrics, and app/sidecar logs land in SigNoz.
 //
@@ -29,7 +29,7 @@ case class OrderResult(success: Boolean, message: String)
 val PricingService = AppId("pricing")
 val PubSubComponent = PubSubName("pubsub")
 
-// Derived cross-service client + publisher (method name / @name → Dapr name).
+// Derived cross-service client + publisher (method name maps verbatim to the Dapr name).
 trait PricingClient:
   def quote(req: QuoteRequest)(using
       ServiceInvocationCapability,
@@ -39,7 +39,7 @@ trait PricingClient:
 object PricingClient extends ServiceInvocation.Derived[PricingClient]
 
 trait OrderTopics:
-  @name("order-completed") def orderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
+  def OrderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
 object OrderTopics extends PubSub.Derived[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ class OrderActivities:
   // consumes it, adding a publish + deliver span to the trace.
   def publishOrderEvent(event: OrderEvent)(using DaprCapability, JsonCodec[OrderEvent]): Unit =
     DaprCapability.pubsub(PubSubComponent):
-      OrderTopics.derive.orderCompleted(event)
+      OrderTopics.derive.OrderCompleted(event)
 
 // Typed caller the workflow schedules activities through (derived from OrderActivities;
 // each call forwards to WorkflowContext under the activity's name). The returned Task
@@ -123,10 +123,9 @@ class OrderWorkflow(using
 // handler stays pure (no println — that is @rejectSafe under safe mode); the
 // log signal in the telemetry comes from the app and daprd stdout instead.
 
-// Derived subscription: method (@name) → Topic.
+// Derived subscription: method name (PascalCase, verbatim) → Topic.
 object OrderSubscriptions:
-  @name("order-completed")
-  def onOrderEvent(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
+  def OrderCompleted(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
     val _ = event.data
     SubscriptionResult.Success
 

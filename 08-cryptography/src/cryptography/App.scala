@@ -13,7 +13,7 @@ import scala.collection.immutable.ArraySeq
 // ─────────────────────────────────────────────────────────────────────────────
 
 val CryptoComponent = CryptoComponentName("localstorage")
-val RsaKey = CryptoKeyName("rsa-key")
+val RsaKey = CryptoKeyName("RsaKey")
 
 case class CryptoResult(
     plaintext: String,
@@ -22,14 +22,13 @@ case class CryptoResult(
     bytesRoundTrip: Boolean,
 )
 
-// The crypto key is described as a trait; dapr4s.derivation implements the encrypt side.
-// Each method maps (via @name) to the CryptoKeyName; the plaintext type picks the overload
-// (String → encryptString, ArraySeq[Byte] → encrypt). Decryption keeps the direct API.
+// The crypto key is described as a trait; dapr4s.derivation implements the encrypt side. Both methods
+// map verbatim to the CryptoKeyName `RsaKey` (PascalCase, so no `@name`) and overload on the plaintext
+// type, which picks the operation (String → encryptString, ArraySeq[Byte] → encrypt). Decryption keeps
+// the direct API.
 trait RsaCipher:
-  @name("rsa-key") def encryptText(plaintext: String, algorithm: KeyWrapAlgorithm)(using CryptoCapability): ArraySeq[Byte]
-  @name("rsa-key") def encryptBytes(plaintext: ArraySeq[Byte], algorithm: KeyWrapAlgorithm)(using
-      CryptoCapability,
-  ): ArraySeq[Byte]
+  def RsaKey(plaintext: String, algorithm: KeyWrapAlgorithm)(using CryptoCapability): ArraySeq[Byte]
+  def RsaKey(plaintext: ArraySeq[Byte], algorithm: KeyWrapAlgorithm)(using CryptoCapability): ArraySeq[Byte]
 object RsaCipher extends Crypto.Derived[RsaCipher]
 
 object CryptographyDemoApp:
@@ -37,11 +36,11 @@ object CryptographyDemoApp:
     DaprCapability.crypto(CryptoComponent):
       val cipher5 = RsaCipher.derive
       val plaintext = "the quick brown fox"
-      val cipher = cipher5.encryptText(plaintext, KeyWrapAlgorithm.Rsa)
+      val cipher = cipher5.RsaKey(plaintext, KeyWrapAlgorithm.Rsa)
       val decrypted = CryptoCapability.decryptString(cipher)
 
       val data = Charsets.encodeString("payload-bytes", Charsets.Utf8)
-      val cipherBytes = cipher5.encryptBytes(data, KeyWrapAlgorithm.Rsa)
+      val cipherBytes = cipher5.RsaKey(data, KeyWrapAlgorithm.Rsa)
       val bytesRoundTrip = CryptoCapability.decrypt(cipherBytes) == data
 
       CryptoResult(plaintext, cipher.size, decrypted, bytesRoundTrip)

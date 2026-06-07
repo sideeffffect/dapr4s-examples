@@ -30,7 +30,7 @@ class Example08CryptographyTest extends E2ESuite:
     val kp = kpg.generateKeyPair()
     val b64 = Base64.getMimeEncoder(64, Array[Byte]('\n')).encodeToString(kp.getPrivate.getEncoded)
     val pem = s"-----BEGIN PRIVATE KEY-----\n$b64\n-----END PRIVATE KEY-----\n"
-    val keyFile = dir / "rsa-key"
+    val keyFile = dir / "RsaKey"
     os.write(keyFile, pem)
     os.perms.set(keyFile, "rw-r--r--")
     dir

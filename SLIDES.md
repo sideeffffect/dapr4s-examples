@@ -543,7 +543,7 @@ Open a scope → use the capability → it's reclaimed at the brace. Guaranteed.
 dapr4s never passes a bare `String` where a domain concept belongs:
 
 ```scala
-StateStoreName("statestore")   ActorType("CounterActor")   Topic("hello-topic")
+StateStoreName("statestore")   ActorType("CounterActor")   Topic("HelloTopic")
 StateStoreKey("hello-note")    AppId("greeting-service")    InvocationMethodName("greet")
 ```
 
@@ -931,7 +931,7 @@ def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit 
 DaprCapability.state(StateStore): DaprCapability.jobs:
   DaprApp(
     invocations = List(InvocationRoute[String, String](InvocationMethodName("schedule"))(scheduleDemo)),
-    jobs        = List(JobRoute[String](DemoJob)(onJobFired)),   // sidecar POSTs to /job/demo-job
+    jobs        = List(JobRoute[String](DemoJob)(onJobFired)),   // sidecar POSTs to /job/DemoJob
   )
 ```
 
@@ -1089,9 +1089,9 @@ a worker fleet scans them, results feed a dashboard. The pipeline must be
 ```mermaid
 flowchart LR
   SQS[/"image source<br/>(SQS / GitHub / ECR)"/] --> GW
-  GW["gateway<br/>submit + publish"] -- "scan-requested" --> PS(("pub/sub"))
+  GW["gateway<br/>submit + publish"] -- "ScanRequested" --> PS(("pub/sub"))
   PS --> W["worker fleet<br/>scan image"]
-  W -- "scan-completed" --> PS2(("pub/sub"))
+  W -- "ScanCompleted" --> PS2(("pub/sub"))
   PS2 --> RES["results<br/>dashboard"]
   W <-->|"seen-/attempt- keys"| ST[("state store")]
   W -. "max retries exceeded" .-> DLQ[/"dead-letter topic"/]
@@ -1110,7 +1110,7 @@ shell each. The fan-out (one topic, many workers) is **Dapr config, not code**.
 | Concern | Without Dapr | In this pipeline |
 |---|---|---|
 | **Ingestion** | SQS SDK in every service | input binding / `publish` to a topic |
-| **Fan-out** | broker client + consumer groups | `Subscription` on `scan-requested` |
+| **Fan-out** | broker client + consumer groups | `Subscription` on `ScanRequested` |
 | **Idempotency** | dedup table you maintain | `seen-<scanId>` marker in state store |
 | **Retry** | hand-rolled backoff | return `SubscriptionResult.Retry` |
 | **Dead-letter** | poison-message queue plumbing | `deadLetterTopic` on the `Subscription` + a DLQ subscriber |
@@ -1137,7 +1137,7 @@ flowchart LR
   subgraph dapr["Dapr / dapr4s"]
     direction TB
     PUB["publish → topic"]
-    SUB["Subscription on<br/>scan-requested"]
+    SUB["Subscription on<br/>ScanRequested"]
     STM["state marker<br/>seen-&lt;scanId&gt;"]
     RES["SubscriptionResult.Retry"]
     DLT["deadLetterTopic<br/>+ DLQ subscriber"]
@@ -1165,13 +1165,13 @@ invocation routes are generated from trait/object descriptions — no `PubSubCap
 no `InvocationRoute[...]` list.
 
 ```scala
-trait ScanTopics:                                              // method @name → Topic
-  @name("scan-requested") def scanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
+trait ScanTopics:                                              // method name (verbatim) → Topic
+  def ScanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
 object ScanTopics extends PubSub.Derived[ScanTopics]
 
 object GatewayRoutes:                                          // method → InvocationRoute
   def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
-    ScanTopics.derive.scanRequested(req)
+    ScanTopics.derive.ScanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
@@ -1188,14 +1188,15 @@ stands in for the SQS binding — it even publishes a **duplicate** `scan-3` and
 
 ## The worker — idempotency, retry, DLQ (derived wiring)
 
-The subscription (topic + dead-letter) is **derived** via `@name`/`@deadLetter`; the handler
-body keeps the explicit `StateCapability` calls — dedup/retry over *dynamic* keys
-(`seen-`/`attempt-<scanId>`) is genuine logic with no derived form.
+The subscription (topic + dead-letter) is **derived** — the method name *is* the topic
+(PascalCase, no `@name`), with `@deadLetter` for the DLQ; the handler body keeps the explicit
+`StateCapability` calls — dedup/retry over *dynamic* keys (`seen-`/`attempt-<scanId>`) is
+genuine logic with no derived form.
 
 ```scala
 object WorkerRoutes:
-  @name("scan-requested") @deadLetter("scan-dead-letter")
-  def onScanRequested(e: CloudEvent[ScanRequest])(using
+  @deadLetter("ScanDeadLetter")
+  def ScanRequested(e: CloudEvent[ScanRequest])(using
       StateCapability, PubSubCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
   ): SubscriptionResult =
     val req = e.data
@@ -1206,7 +1207,7 @@ object WorkerRoutes:
       StateCapability.save(attemptKey(req.scanId), attempts + 1)
       if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry          // transient
       else
-        ScanTopics.derive.scanCompleted(scan(req))                          // derived publish
+        ScanTopics.derive.ScanCompleted(scan(req))                          // derived publish
         StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
         SubscriptionResult.Success                                          // ack
 
@@ -1224,13 +1225,13 @@ drives redelivery; once a request exhausts the retries the sidecar routes it to 
 
 ```mermaid
 flowchart LR
-  E(["scan-requested<br/>event"]) --> SEEN{"seen<br/>marker?"}
+  E(["ScanRequested<br/>event"]) --> SEEN{"seen<br/>marker?"}
   SEEN -- yes --> DROP[/"Drop — discard"/]
   SEEN -- no --> POISON{"source =<br/>poison?"}
   POISON -- yes --> RT1["Retry → exhausts policy"] --> DLQ[("deadLetterTopic")]
   POISON -- no --> FLAKY{"flaky &amp;<br/>first try?"}
   FLAKY -- yes --> RT2[/"Retry — inline redelivery"/]
-  FLAKY -- no --> WORK["publish scan-completed<br/>+ save seen marker"] --> OK[/"Success — ack"/]
+  FLAKY -- no --> WORK["publish ScanCompleted<br/>+ save seen marker"] --> OK[/"Success — ack"/]
   classDef ev fill:#e6eeff,stroke:#3355aa,color:#1a1a2e;
   classDef bad fill:#ffd6d6,stroke:#b00000,color:#1a1a2e;
   classDef ok fill:#d6f5d6,stroke:#2e7d32,color:#1a1a2e;

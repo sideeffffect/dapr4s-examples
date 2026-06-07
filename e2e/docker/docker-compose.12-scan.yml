@@ -1,8 +1,8 @@
 # Multi-service infrastructure for the 08 Grafana-style scan pipeline.
 # Three app containers (gateway, worker, results), each with its own daprd
 # sidecar sharing the app container's network namespace. All sidecars share one
-# Redis (pub/sub + state), so the gateway's published `scan-requested` events
-# fan out to the worker, and the worker's `scan-completed` events reach results.
+# Redis (pub/sub + state), so the gateway's published `ScanRequested` events
+# fan out to the worker, and the worker's `ScanCompleted` events reach results.
 # No cross-sidecar service invocation is needed here — the tests drive the
 # gateway and read the dashboard via each app's own HTTP port.
 services:

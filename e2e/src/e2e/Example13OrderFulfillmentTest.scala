@@ -3,7 +3,7 @@ package e2e
 /** E2E for the 09 ZEISS-style order-fulfillment saga.
   *
   * Boots all four services (order + inventory + payment + shipping), each with its own sidecar. A POST to the
-  * order-service `/submit-order` route runs the durable workflow synchronously (the handler waits for completion) — the
+  * order-service `/SubmitOrder` route runs the durable workflow synchronously (the handler waits for completion) — the
   * saga's activities reach the downstream services by app-id via Dapr service invocation, so a single assertion
   * exercises the full cross-service path including compensation.
   *
@@ -26,7 +26,7 @@ class Example13OrderFulfillmentTest extends E2ESuite:
   override def munitFixtures = List(infra)
 
   private def submit(order: String): ujson.Value =
-    val (status, body) = DaprHttp.appPost(infra.appPort("order"), "/submit-order", order)
+    val (status, body) = DaprHttp.appPost(infra.appPort("order"), "/SubmitOrder", order)
     assertEquals(status, 200, clue(body))
     ujson.read(body)
 

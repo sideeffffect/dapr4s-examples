@@ -209,13 +209,13 @@ dapr run --app-id workflow-driver \
 Real-world case study: a Grafana-style, event-driven vulnerability scanner built as a
 fan-out pub/sub pipeline across three services (each with its own `-shell`):
 
-- **scan-gateway** — accepts submissions and publishes to the `scan-requested` topic
+- **scan-gateway** — accepts submissions and publishes to the `ScanRequested` topic
   (`scanGateway` server; `scanSeed` is a one-shot publisher).
-- **scan-worker** — subscribes to `scan-requested`, runs the (stubbed) scan, and publishes
-  to `scan-completed`. A request that keeps failing past the sidecar's retry policy is
-  routed to the real dead-letter topic (`scan-dead-letter`).
-- **scan-results** — subscribes to `scan-completed` (folding results into a running
-  dashboard) and to the dead-letter topic `scan-dead-letter` (counting failed requests).
+- **scan-worker** — subscribes to `ScanRequested`, runs the (stubbed) scan, and publishes
+  to `ScanCompleted`. A request that keeps failing past the sidecar's retry policy is
+  routed to the real dead-letter topic (`ScanDeadLetter`).
+- **scan-results** — subscribes to `ScanCompleted` (folding results into a running
+  dashboard) and to the dead-letter topic `ScanDeadLetter` (counting failed requests).
 
 ```
 # Terminal 1 — results dashboard
@@ -249,7 +249,7 @@ workflow across four services (each with its own `-shell`):
 
 - **order-service** — runs `OrderProcessingWorkflow`, which calls the downstream services
   in sequence (reserve → charge → dispatch) and compensates on failure (release / refund).
-  Hosts a `submit-order` invocation route. `orderServer` is the workflow/server app;
+  Hosts a `SubmitOrder` invocation route. `orderServer` is the workflow/server app;
   `orderDriver` submits the sample orders and prints outcomes.
 - **inventory-service** — `reserve` / `release` (`inventoryServer`).
 - **payment-service** — `charge` / `refund` (`paymentServer`).
@@ -269,7 +269,7 @@ dapr run --app-id shipping-service --app-port 8094 \
          --components-path ./components \
          -- mill 09-shipping-service-shell.runMain shippingservice.shippingServer
 
-# Terminal 4 — order-service (workflow + submit-order route)
+# Terminal 4 — order-service (workflow + SubmitOrder route)
 dapr run --app-id order-service --app-port 8091 \
          --components-path ./components \
          -- mill 09-order-service-shell.runMain orderservice.orderServer

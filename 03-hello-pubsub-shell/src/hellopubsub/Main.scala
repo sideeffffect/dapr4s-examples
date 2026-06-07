@@ -37,6 +37,6 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
 @main def publisher(): Unit =
   println("=== 03 hello-pubsub: publisher ===\n")
   Dapr(daprConfigFromEnv(defaultAppPort = 8083)).run:
-    println("Publishing 5 messages to hello-topic...")
+    println("Publishing 5 messages to HelloTopic...")
     PublisherApp()
   println("[publisher] done.")

@@ -63,10 +63,10 @@ trait ShippingClient:
   ): ShipmentResult
 object ShippingClient extends ServiceInvocation.Derived[ShippingClient]
 
-// Derived workflow starter: @name → WorkflowName (the workflow's registered name).
+// Derived workflow starter: the method name maps verbatim to the WorkflowName (the workflow's
+// registered name is its class name, already PascalCase — so no `@name` override).
 trait OrderWorkflows:
-  @name("OrderProcessingWorkflow")
-  def start(input: OrderRequest)(using WorkflowCapability, JsonCodec[OrderRequest]): WorkflowInstanceId
+  def OrderProcessingWorkflow(input: OrderRequest)(using WorkflowCapability, JsonCodec[OrderRequest]): WorkflowInstanceId
 object OrderWorkflows extends Workflow.Derived[OrderWorkflows]
 
 // Sample orders that exercise each saga outcome: success, out-of-stock,
@@ -88,7 +88,7 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
     JsonCodec[OrderRequest],
     JsonCodec[OrderResult],
 ): ProcessOrderResult =
-  val id = OrderWorkflows.derive.start(order)
+  val id = OrderWorkflows.derive.OrderProcessingWorkflow(order)
   id.waitForCompletion(timeout) match
     case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
     case Some(snap) =>
@@ -202,8 +202,7 @@ object ServerApp:
     // Routes close over `timeout`; InvocationRoutes.derive turns each method into an InvocationRoute,
     // summoning the WorkflowCapability/JsonCodecs the body needs at this derive site.
     object OrderRoutes:
-      @name("submit-order")
-      def submitOrder(order: OrderRequest)(using
+      def SubmitOrder(order: OrderRequest)(using
           WorkflowCapability,
           JsonCodec[OrderRequest],
           JsonCodec[OrderResult],

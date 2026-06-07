@@ -3,7 +3,7 @@ package e2e
 /** E2E for the 08 Grafana-style scan pipeline.
   *
   * Boots gateway + worker + results, each with its own sidecar, sharing one Redis for pub/sub and state. Submitting a
-  * scan to the gateway fans out over `scan-requested` to the worker, whose `scan-completed` events the results service
+  * scan to the gateway fans out over `ScanRequested` to the worker, whose `ScanCompleted` events the results service
   * folds into a dashboard aggregate. Tests assert against *deltas* in that dashboard so they are independent of
   * ordering and of state accumulated by earlier cases.
   *

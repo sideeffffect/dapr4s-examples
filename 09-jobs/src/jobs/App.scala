@@ -17,20 +17,20 @@ import dapr4s.derivation.*
 // ─────────────────────────────────────────────────────────────────────────────
 
 val StateStore = StateStoreName("statestore")
-val DemoJob = JobName("demo-job")
+val DemoJob = JobName("DemoJob")
 
 def resultKey: StateStoreKey = StateStoreKey(s"job-result-${DemoJob.value}")
 
 // The scheduler is described as a trait; dapr4s.derivation implements it. The method name
-// maps (via @name) to the JobName; a `dueTime: Instant` parameter selects scheduleOnce.
+// maps verbatim to the JobName (PascalCase, so no `@name`); a `dueTime: Instant` parameter
+// selects scheduleOnce.
 trait Scheduler:
-  @name("demo-job")
-  def scheduleDemoJob(data: String, dueTime: java.time.Instant)(using JobsCapability, JsonCodec[String]): Unit
+  def DemoJob(data: String, dueTime: java.time.Instant)(using JobsCapability, JsonCodec[String]): Unit
 object Scheduler extends Jobs.Derived[Scheduler]
 
 // Schedule DemoJob to fire two seconds from now, carrying `payload`.
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
-  Scheduler.derive.scheduleDemoJob(payload, java.time.Instant.now().plusSeconds(2))
+  Scheduler.derive.DemoJob(payload, java.time.Instant.now().plusSeconds(2))
   payload
 
 // Invoked by the sidecar when DemoJob fires; records the payload for inspection.

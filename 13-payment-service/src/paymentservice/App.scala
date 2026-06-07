@@ -24,7 +24,7 @@ def refund(req: RefundRequest): Unit = ()
 // Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
 object PaymentRoutes:
   def charge(req: ChargeRequest): PaymentResult = paymentservice.charge(req)
-  def refund(req: RefundRequest): Unit          = paymentservice.refund(req)
+  def refund(req: RefundRequest): Unit = paymentservice.refund(req)
 
 object PaymentApp:
   def apply()(using
