@@ -1704,8 +1704,6 @@ or phone home — the same machinery dapr4s uses for Dapr clients, aimed at untr
 
 ## Takeaways — the ideas
 
-<div class="small">
-
 **Dapr — accidental complexity, lifted out**
 
 - Hides the typical infra/plumbing behind one **language-agnostic API**, so you write only the **essential** business logic.
@@ -1714,14 +1712,12 @@ or phone home — the same machinery dapr4s uses for Dapr clients, aimed at untr
 **Safe Scala — effects you can see**
 
 - A **capability tracks an effect**; **capture checking** stops it being smuggled **out *or* in** through a closure or object.
-- So **effects are always visible in the types** — and each signature shows which Dapr powers a method uses, and (by omission) which it *can't* reach for.
+- So **effects are always visible in the types** — each signature shows which Dapr powers a method uses, and (by omission) which it *can't* reach for.
 
 **Why it's not just academic**
 
 - Safe Scala was **born to sandbox AI agents** — untrusted code, checked strictly. That same strictness makes *human* code easy to read.
 - The upshot: a tool for **ordinary engineers doing ordinary work**, not a research exercise.
-
-</div>
 
 ---
 
