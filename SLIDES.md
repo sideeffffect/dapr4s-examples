@@ -21,8 +21,8 @@ style: |
   section.section-break h2 { color: #9aa5ce; }
   h1 { color: #1a1a2e; }
   h2 { color: #16213e; }
-  code { font-size: 0.85rem; }
-  pre { font-size: 0.76rem; }
+  code { font-size: 1.28rem; }
+  pre { font-size: 1.14rem; }
   table { font-size: 0.9rem; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .small { font-size: 0.85rem; }
@@ -54,7 +54,7 @@ style: |
    - plus **two real-world case studies** — Grafana scan pipeline, ZEISS order saga
    - and an **operations capstone** — observability (SigNoz) + the Diagrid dashboard
 6. **The payoff** — what the compiler now guarantees
-7. **Trade-offs, status, and where this goes next
+7. **Trade-offs**, status, and where this goes next
 
 ---
 
@@ -473,6 +473,40 @@ and returns data. **Macros and side effects never cross into safe code.**
 
 ---
 
+## Two directions of traffic
+
+Every building block is either a call your **app makes to Dapr**, or a call
+**Dapr makes back to your app**. dapr4s gives each direction its own shape:
+
+<div class="columns">
+<div>
+
+### App → Dapr · *capabilities*
+
+You hold a capability and **call out** — `save`, `publish`, `invoke`,
+`get`, `tryLock`, `encrypt`, `schedule`.
+
+Reached through `DaprCapability` — scoped, capture-checked.
+
+</div>
+<div>
+
+### Dapr → App · *routes*
+
+The sidecar **calls you**: a delivered message, an invoked method, a fired job,
+an actor turn, a workflow activity.
+
+Each is a typed **route** you register: `Subscription`, `InvokeRoute`,
+`BindingRoute`, `JobRoute`, …
+
+</div>
+</div>
+
+> Outbound = something you *do*. Inbound = something you *handle*. The bundle of
+> everything inbound is a **`DaprApp`**.
+
+---
+
 ## `DaprCapability` — the root capability
 
 `Dapr(config).run { ... }` puts a `DaprCapability` in scope. It's a **factory**
@@ -513,6 +547,26 @@ flowchart TD
 
 Every sub-capability carries `^{this}` — the root's lifetime. Try to smuggle one
 past the `run` block and the program **does not compile.**
+
+---
+
+## `DaprApp` — the inbound surface
+
+A `DaprApp` declares **every route the sidecar may call** — your app's server
+side, as plain data:
+
+```scala
+DaprApp(
+  invokeRoutes  = List(InvokeRoute[GreetRequest, GreetResponse](...)(greet)),
+  subscriptions = List(Subscription[Message](component, topic)(onMessage)),
+  bindings      = List(BindingRoute[PostRef](ordersQueue)(handle)),
+  jobs          = List(JobRoute[String](DemoJob)(onJobFired)),
+)
+```
+
+The pure core **returns** a `DaprApp`; the shell hands it to `Dapr(...).run`, which
+wires each route to the sidecar's callbacks. Apps that only *call out* return plain
+data and need no `DaprApp`.
 
 ---
 
@@ -894,10 +948,9 @@ def processOrder(order: OrderRequest, name: WorkflowName, timeout: FiniteDuratio
       case Some(snap) => ... snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
 ```
 
-`callActivity` returns a `Task[O]` that **captures the `WorkflowContext`**
-(`Task[O]^{ctx}`). Capture checking forbids it from escaping `run` — you can't
-stash it in a field or outer `var` and `.await()` it later, when scheduling would
-no longer be deterministic. The `Task` lives and dies inside the run.
+`callActivity` returns `Task[O]^{ctx}` — it captures the `WorkflowContext`, so
+capture checking forbids stashing it to `.await()` later. The `Task` lives and dies
+inside `run` — that's what keeps replay deterministic.
 
 ---
 
@@ -1272,10 +1325,9 @@ object WorkerRoutes:
 DaprApp(subscriptions = Subscriptions.derive[WorkerRoutes.type](PubSubComponent))
 ```
 
-`Drop` / `Retry` / `Success` are the **only** three answers — the type makes the
-at-least-once contract explicit. A Dapr **Resiliency** policy (`components/resiliency.yaml`)
-drives redelivery; once a request exhausts the retries the sidecar routes it to the
-`@deadLetter` topic, where the results service tallies it.
+`Drop` / `Retry` / `Success` are the **only** three answers. A Dapr **Resiliency**
+policy drives redelivery; once retries are exhausted the sidecar routes the request
+to the `@deadLetter` topic, where the results service tallies it.
 
 ---
 
@@ -1409,12 +1461,10 @@ class OrderProcessingWorkflow extends Workflow:
       else ... // dispatch, else refund + release, else "shipped ✓"
 ```
 
-The nested `if/else` **is** the state-machine diagram. Each activity call returns
-a `Task[O]` that captures the exclusive `WorkflowContext` (`Task[O]^{ctx}`), so
-capture checking forbids it from escaping `run`. The whole state machine stays
-inside the run — that's what keeps replay deterministic. The only piece written out
-literally is the orchestration body — and that's the part you *want* to read literally,
-because it *is* the saga.
+The nested `if/else` **is** the state-machine diagram. Each call returns
+`Task[O]^{ctx}`, captured by the exclusive `WorkflowContext`, so capture checking
+forbids it escaping `run` — the whole machine stays inside, keeping replay
+deterministic. The orchestration body is the one piece you *want* to read literally.
 
 ---
 
@@ -1561,9 +1611,10 @@ off as a red squiggle in your editor, not a 3 a.m. page.
 | **Ox** | direct-style, structured concurrency | via capture checking |
 | **dapr4s** | **direct-style + capture checking** | **yes, via `^` captures** |
 
-dapr4s is **direct style**: ordinary code, ordinary control flow, no `for`-comprehension
-monad tax — but the *capabilities* are tracked. No effect-runtime dependency;
-blocking calls under the hood, ready for **JVM virtual threads**.
+dapr4s is **direct style** by design: ordinary synchronous code, no `for`-comprehension
+monad tax — only the *capabilities* are tracked. No effect runtime; it wraps the
+blocking Dapr Java SDK and runs on **JVM virtual threads** today. That's the
+intended shape — **not** a stepping stone to async.
 
 > "Capabilities … solve this problem of effect polymorphism — a very fundamental
 > problem [that] hasn't been solved for 30 years." — **Martin Odersky** (2026)
@@ -1599,19 +1650,29 @@ the effect* their argument carries.
 
 ---
 
+## Three constraints — by design
+
+dapr4s is deliberately **small and direct**. Three choices it makes on purpose:
+
+- **Synchronous, direct-style.** It wraps the Dapr **Java SDK** (Reactor `Mono`/`Flux`)
+  and simply **blocks** on it — but on **virtual threads**, so a blocked call costs
+  almost nothing. It is *not* async and **never intends to be** — direct style is the point.
+- **JSON only.** One small `JsonCodec` over upickle carries every payload — no Protobuf, no Avro.
+- **No streaming.** Unary request/response and discrete pub/sub messages — not byte or event streams.
+
+> Not gaps to fill later — they keep the model **ordinary**: code you read
+> top-to-bottom, on the JVM's own lightweight threads.
+
+---
+
 ## Honest trade-offs & current status
 
 - Built on **Scala 3.10 nightly** capture checking — *experimental*, syntax still moving
-- The trusted core needs `@assumeSafe` at every Java/macro boundary
-  - Mitigated: it's small, audited, and **one place per shell** in the examples
-- Capture checking has rough edges (compile-time blowups with many opaque types;
-  `CanThrow` interactions with sibling lambdas)
-- Library scope: **12 building blocks**, 115 unit tests; actor *server* hosting and
-  some workflow I/O encoding are still maturing
-- Blocking API today — a fine fit for **virtual threads**, not yet async-native
-- It attacks **accidental** complexity — client lifetimes, effect leaks, wire-type
-  drift. The **essential** state of your domain still lives in the state store and
-  your data model; no type system makes that go away (as the *Tar Pit* critics note)
+- The trusted core needs `@assumeSafe` at each Java/macro boundary — small, audited, **one place per shell**
+- Capture checking has rough edges (opaque-type compile blowups; `CanThrow` + sibling lambdas)
+- **12 building blocks**, 115 unit tests; actor *server* hosting and some workflow I/O encoding still maturing
+- Attacks **accidental** complexity — lifetimes, effect leaks, wire-type drift; the
+  **essential** state of your domain still lives in your data model, and no type system changes that
 
 > The *direction* — effects the compiler can prove — is the durable idea here.
 
@@ -1641,50 +1702,41 @@ or phone home — the same machinery dapr4s uses for Dapr clients, aimed at untr
 
 ---
 
-## Nine lessons worth keeping
+## Takeaways — the ideas
 
 <div class="small">
 
-**Safe Scala — effects you can see**
-
-1. A **capability tracks an effect** — hold one, and the type says so.
-2. **Capture checking** stops a capability being smuggled **out *or* in** through a closure or object.
-3. So **effects are always visible in the types** — nothing performs I/O in secret.
-
 **Dapr — accidental complexity, lifted out**
 
-4. Dapr hides the typical infra/plumbing behind one **language-agnostic API**, so you write only the **essential** business logic.
-5. Its design **fits Scala beautifully** — every building block becomes a **capability**.
+- Hides the typical infra/plumbing behind one **language-agnostic API**, so you write only the **essential** business logic.
+- Its design **fits Scala beautifully** — every building block becomes a **capability**.
 
-**Where the two meet**
+**Safe Scala — effects you can see**
 
-6. Each method's signature **declares which Dapr powers it uses** — and, by omission, **which it can't reach for** inside.
-7. Safe Scala was **born as a harness for AI agents** — agents aren't trustworthy, so the code they generate must be checked *strictly*.
-8. That **same strictness helps humans** — the types make the code easy to understand.
-9. So Safe Scala isn't a purely **academic** exercise — it's a tool for **ordinary engineers doing ordinary work**.
+- A **capability tracks an effect**; **capture checking** stops it being smuggled **out *or* in** through a closure or object.
+- So **effects are always visible in the types** — and each signature shows which Dapr powers a method uses, and (by omission) which it *can't* reach for.
+
+**Why it's not just academic**
+
+- Safe Scala was **born to sandbox AI agents** — untrusted code, checked strictly. That same strictness makes *human* code easy to read.
+- The upshot: a tool for **ordinary engineers doing ordinary work**, not a research exercise.
 
 </div>
 
-> Dapr removes the accidental complexity of *distribution*; Safe Scala makes the
-> *effects that remain* impossible to lose track of.
-
 ---
 
-## Takeaways
+## Takeaways — dapr4s in practice
 
-1. **Dapr** moves the hard distributed plumbing into a sidecar — and out of your code.
-2. **Safe Scala** (capture checking + safe mode) makes effects and resource
-   lifetimes **visible to the type system**.
-3. **dapr4s** marries them: a **pure, checked core** of business logic over a
-   **small, quarantined impure shell**.
-4. It's not a toy — the worked examples cover every building block (plus end-to-end
-   **observability**), and **two real-world case studies** (Grafana's scan pipeline,
-   ZEISS's order saga) compose them into multi-service systems.
-5. The payoff: a whole class of distributed-systems bugs becomes a **compile error**.
+- **dapr4s marries the two**: a **pure, checked core** of business logic over a
+  **small, quarantined impure shell**.
+- It's **not a toy** — the examples cover every building block (plus end-to-end
+  **observability**), and **two real-world case studies** (Grafana's scan pipeline,
+  ZEISS's order saga) compose them into multi-service systems.
+- The payoff: a whole class of distributed-systems bugs becomes a **compile error**,
+  not a 3 a.m. page.
 
 > *Out of the Tar Pit* named the disease — accidental complexity from **state** and
-> **control**. dapr4s is one concrete prescription: lift it into a sidecar, pin the
-> rest to the types.
+> **control**. dapr4s is one prescription: lift it into a sidecar, pin the rest to the types.
 
 ---
 
