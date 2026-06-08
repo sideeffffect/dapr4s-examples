@@ -124,6 +124,18 @@ Source files live under `src/<package>/` within each module directory, e.g.:
 
 ---
 
+## Formatting
+
+The project uses scalafmt (config in `.scalafmt.conf`). Format everything with
+`./mill mill.scalalib.scalafmt/reformatAll`; check without writing (as CI does) with
+`./mill mill.scalalib.scalafmt/checkFormatAll`. The CI `format` job blocks the build on any
+unformatted source.
+
+Files using experimental capture-checking `^{...}` return-type syntax scalafmt can't parse are
+listed in `project.excludeFilters` in `.scalafmt.conf` — add new such files there.
+
+---
+
 ## Running examples
 
 All component YAMLs live in `components/`. Every `dapr run` picks them up via

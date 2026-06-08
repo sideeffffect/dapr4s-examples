@@ -7,6 +7,36 @@ on:
     branches: [main, master]
 
 jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Cache Mill and Coursier
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.cache/mill
+            out
+          key: mill-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          restore-keys: |
+            mill-${{ hashFiles('.mill-version', 'build.mill') }}-
+            mill-
+
+      # checkFormatAll reads .scalafmt.conf and honours its project.excludeFilters,
+      # so the experimental capture-checking `^{...}` files scalafmt can't parse are
+      # skipped. Fails (exit 1) on any misformatted, non-excluded source.
+      - name: Check formatting (scalafmt)
+        run: ./mill mill.scalalib.scalafmt/checkFormatAll
+
   e2e:
     runs-on: ubuntu-latest
     # First (cache-miss) run pulls ~2.5GB of images and boots the heavy SigNoz
