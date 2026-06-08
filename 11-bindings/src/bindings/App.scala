@@ -18,7 +18,7 @@ import dapr4s.*
 //
 // End-to-end flow (one app, no external tooling needed to drive it):
 //
-//   InvocationRoute /enqueue ──▶ orders-queue.invokeOneWay   [OUTPUT to Kafka]
+//   InvokeRoute /enqueue ──▶ orders-queue.invokeOneWay   [OUTPUT to Kafka]
 //                                        │
 //                                   Dapr / Kafka
 //                                        ▼
@@ -26,14 +26,14 @@ import dapr4s.*
 //        └─▶ jsonplaceholder.invoke(get /posts/N)[Post]    [OUTPUT to HTTP API]
 //        └─▶ StateCapability.save(post-N, fetched)
 //
-//   InvocationRoute /create  ──▶ jsonplaceholder.invoke(post /posts)[Post]  [OUTPUT to HTTP API]
+//   InvokeRoute /create  ──▶ jsonplaceholder.invoke(post /posts)[Post]  [OUTPUT to HTTP API]
 //
-// WHY two explicit `val`s instead of the `DaprCapability.binding(name){…}` transformer:
+// WHY two explicit `val`s instead of the `DaprCapability.bindings(name){…}` transformer:
 // both bindings are the SAME type (`BindingsCapability`), so they cannot both sit in
 // implicit scope as `given`s (that would be an ambiguous implicit). We use the direct
-// factory style — `cap.binding(name)` returns a `BindingsCapability` we name explicitly —
+// factory style — `cap.bindings(name)` returns a `BindingsCapability` we name explicitly —
 // and call `.invoke` on each by name. The route lambdas capture these values; the
-// @assumeSafe AnyRef-erasure inside InvocationRoute/BindingRoute drops the capture set.
+// @assumeSafe AnyRef-erasure inside InvokeRoute/BindingRoute drops the capture set.
 // StateCapability, of which there is only one, stays an implicit via the state transformer.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,20 +63,20 @@ object BindingsExampleApp:
       JsonCodec[String],
   ): DaprApp =
     val cap = summon[DaprCapability]
-    val ordersQueue = cap.binding(OrdersQueue) // produce side of the Kafka binding
-    val jsonPlaceholder = cap.binding(JsonPlaceholder) // the HTTP API binding
+    val ordersQueue = cap.bindings(OrdersQueue) // produce side of the Kafka binding
+    val jsonPlaceholder = cap.bindings(JsonPlaceholder) // the HTTP API binding
 
     DaprCapability.state(StateStore):
       DaprApp(
-        invocations = List(
+        invokeRoutes = List(
           // OUTPUT (HTTP, with a request body): create a post on jsonplaceholder.
-          InvocationRoute[NewPost, Post](InvocationMethodName("create")): newPost =>
+          InvokeRoute[NewPost, Post](InvokeMethodName("create")): newPost =>
             jsonPlaceholder
               .invoke(BindingOperation("post"), newPost, pathMeta("/posts"))[Post]
               .getOrElse(throw RuntimeException("jsonplaceholder returned no body for create")),
           // OUTPUT (Kafka, fire-and-forget): enqueue a reference; the BindingRoute below
           // receives it back from Kafka and does the fetch.
-          InvocationRoute[PostRef, String](InvocationMethodName("enqueue")): ref =>
+          InvokeRoute[PostRef, String](InvokeMethodName("enqueue")): ref =>
             ordersQueue.invokeOneWay(BindingOperation("create"), ref)
             s"enqueued post ${ref.postId}",
         ),

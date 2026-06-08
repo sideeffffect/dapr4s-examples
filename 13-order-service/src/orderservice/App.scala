@@ -36,32 +36,32 @@ val PaymentService = AppId("payment-service")
 val ShippingService = AppId("shipping-service")
 
 // Derived cross-service clients: each method name maps verbatim to the callee's
-// InvocationMethodName. The activities call these instead of ServiceInvocationCapability.invoke.
+// InvokeMethodName. The activities call these instead of InvokeCapability.invoke.
 trait InventoryClient:
   def reserve(req: ReserveRequest)(using
-      ServiceInvocationCapability,
+      InvokeCapability,
       JsonCodec[ReserveRequest],
       JsonCodec[ReservationResult],
   ): ReservationResult
-  def release(req: ReleaseRequest)(using ServiceInvocationCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit
-def InventoryClient(appId: AppId): InventoryClient = ServiceInvocation.derive[InventoryClient](appId)
+  def release(req: ReleaseRequest)(using InvokeCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit
+def InventoryClient(appId: AppId): InventoryClient = Invoke.derive[InventoryClient](appId)
 
 trait PaymentClient:
   def charge(req: ChargeRequest)(using
-      ServiceInvocationCapability,
+      InvokeCapability,
       JsonCodec[ChargeRequest],
       JsonCodec[PaymentResult],
   ): PaymentResult
-  def refund(req: RefundRequest)(using ServiceInvocationCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit
-def PaymentClient(appId: AppId): PaymentClient = ServiceInvocation.derive[PaymentClient](appId)
+  def refund(req: RefundRequest)(using InvokeCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit
+def PaymentClient(appId: AppId): PaymentClient = Invoke.derive[PaymentClient](appId)
 
 trait ShippingClient:
   def dispatch(req: ShipRequest)(using
-      ServiceInvocationCapability,
+      InvokeCapability,
       JsonCodec[ShipRequest],
       JsonCodec[ShipmentResult],
   ): ShipmentResult
-def ShippingClient(appId: AppId): ShippingClient = ServiceInvocation.derive[ShippingClient](appId)
+def ShippingClient(appId: AppId): ShippingClient = Invoke.derive[ShippingClient](appId)
 
 // Derived workflow starter: the method name maps verbatim to the WorkflowName. Unlike the
 // pub/sub topics and invocation routes — whose names are ours to choose, so they follow the
@@ -123,23 +123,23 @@ object DriverApp:
 class OrderActivities:
   def reserve(o: OrderRequest)(using DaprCapability, JsonCodec[ReserveRequest], JsonCodec[ReservationResult])
       : ReservationResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       InventoryClient(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 
   def charge(o: OrderRequest)(using DaprCapability, JsonCodec[ChargeRequest], JsonCodec[PaymentResult]): PaymentResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       PaymentClient(PaymentService).charge(ChargeRequest(o.orderId, o.amount))
 
   def dispatch(o: OrderRequest)(using DaprCapability, JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): ShipmentResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       ShippingClient(ShippingService).dispatch(ShipRequest(o.orderId, o.address))
 
   def release(req: ReleaseRequest)(using DaprCapability, JsonCodec[ReleaseRequest], JsonCodec[Unit]): Unit =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       InventoryClient(InventoryService).release(req)
 
   def refund(req: RefundRequest)(using DaprCapability, JsonCodec[RefundRequest], JsonCodec[Unit]): Unit =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       PaymentClient(PaymentService).refund(req)
 
 // Typed caller the saga schedules activities through (derived from OrderActivities;
@@ -202,7 +202,7 @@ object ServerApp:
       JsonCodec[RefundRequest],
       JsonCodec[Unit],
   ): DaprApp =
-    // Routes close over `timeout`; InvocationRoutes.derive turns each method into an InvocationRoute,
+    // Routes close over `timeout`; InvokeRoutes.derive turns each method into an InvokeRoute,
     // summoning the WorkflowCapability/JsonCodecs the body needs at this derive site. The route name is
     // a backtick identifier (no `@name`): kebab-case here keeps the on-the-wire invocation path stable
     // for external HTTP callers, which is the documented fallback when a plain PascalCase name won't do.
@@ -218,5 +218,5 @@ object ServerApp:
       DaprApp(
         workflows = List(new OrderProcessingWorkflow),
         activities = WorkflowActivities.derive[OrderActivities],
-        invocations = InvocationRoutes.derive[OrderRoutes.type],
+        invokeRoutes = InvokeRoutes.derive[OrderRoutes.type],
       )

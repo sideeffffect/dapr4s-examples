@@ -18,7 +18,7 @@ case class ReleaseRequest(reservationId: String, sku: String, quantity: Int)
 
 def stockKey(sku: String): StateStoreKey = StateStoreKey(s"stock-$sku")
 
-// Derived invocation routes: each method → an InvocationRoute. The handler bodies keep the
+// Derived invocation routes: each method → an InvokeRoute. The handler bodies keep the
 // explicit StateCapability calls — stock arithmetic over a *dynamic* key (stock-<sku>) has no
 // derived form; only the route wiring is derived.
 object InventoryRoutes:
@@ -43,4 +43,4 @@ object InventoryApp:
       JsonCodec[Unit],
   ): DaprApp =
     DaprCapability.state(StateStore):
-      DaprApp(invocations = InvocationRoutes.derive[InventoryRoutes.type])
+      DaprApp(invokeRoutes = InvokeRoutes.derive[InventoryRoutes.type])

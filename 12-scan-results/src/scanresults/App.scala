@@ -43,7 +43,7 @@ object ResultSubscriptions:
     updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
     SubscriptionResult.Success
 
-// Derived invocation route: `dashboard` → InvocationMethodName("dashboard"), Unit input.
+// Derived invocation route: `dashboard` → InvokeMethodName("dashboard"), Unit input.
 object ResultRoutes:
   def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
     StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
@@ -72,5 +72,5 @@ object ResultsApp:
         StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
       DaprApp(
         subscriptions = Subscriptions.derive[ResultSubscriptions.type](PubSubComponent),
-        invocations = InvocationRoutes.derive[ResultRoutes.type],
+        invokeRoutes = InvokeRoutes.derive[ResultRoutes.type],
       )

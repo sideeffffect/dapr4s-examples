@@ -9,7 +9,7 @@ import scala.concurrent.duration.*
 // entry points (which do console I/O).  Everything else — the domain model, the
 // activities, the saga workflow, ServerApp, and the workflow-client logic
 // (processOrder / DriverApp) — is pure and lives in the non-shell module (see
-// App.scala).  The activities no longer capture a ServiceInvocationCapability:
+// App.scala).  The activities no longer capture a InvokeCapability:
 // WorkflowActivity.execute now receives a DaprCapability per call.
 // ─────────────────────────────────────────────────────────────────────────────
 

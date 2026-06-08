@@ -8,20 +8,20 @@ val MessageTopic = Topic("HelloTopic")
 case class Message(from: String, text: String, sequenceNo: Int)
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
-// The subscription handler captures PubSubCapability; the compiler tracks this
+// The subscription handler captures PublishCapability; the compiler tracks this
 // capture when the handler is passed to Subscription[Message].  The @assumeSafe
 // boundary inside Subscription.apply erases the capture set, so the returned
 // DaprApp is a plain value.  JsonCodec[Message] is passed from the shell.
 // ─────────────────────────────────────────────────────────────────────────────
 
-def onMessage(event: CloudEvent[Message])(using PubSubCapability, JsonCodec[Message]): SubscriptionResult =
+def onMessage(event: CloudEvent[Message])(using PublishCapability, JsonCodec[Message]): SubscriptionResult =
   val msg = event.data
-  PubSubCapability.publish(Topic("hello-replies"), msg.copy(from = "subscriber"))
+  PublishCapability.publish(Topic("hello-replies"), msg.copy(from = "subscriber"))
   SubscriptionResult.Success
 
 object SubscriberApp:
   def apply()(using DaprCapability, JsonCodec[Message]): DaprApp =
-    DaprCapability.pubsub(PubSubComponent):
+    DaprCapability.publish(PubSubComponent):
       DaprApp(subscriptions =
         List(
           Subscription[Message](PubSubComponent, MessageTopic)(onMessage),
@@ -30,6 +30,6 @@ object SubscriberApp:
 
 object PublisherApp:
   def apply()(using DaprCapability, JsonCodec[Message]): Unit =
-    DaprCapability.pubsub(PubSubComponent):
+    DaprCapability.publish(PubSubComponent):
       for i <- 1 to 5 do
-        PubSubCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))
+        PublishCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))

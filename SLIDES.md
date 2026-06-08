@@ -481,10 +481,10 @@ for every sub-capability — and it *cannot outlive the run block*:
 ```scala
 trait DaprCapability extends scala.caps.ExclusiveCapability:
   def state(storeName: StateStoreName): StateCapability^{this}
-  def pubsub(pubsubName: PubSubName): PubSubCapability^{this}
-  def invoker: ServiceInvocationCapability^{this}
+  def publish(pubsubName: PubSubName): PublishCapability^{this}
+  def invoke: InvokeCapability^{this}
   def secrets(storeName: SecretStoreName): SecretsCapability^{this}
-  def lock(storeName: LockStoreName): DistributedLockCapability^{this}
+  def lock(storeName: LockStoreName): LockCapability^{this}
   def actor(t: ActorType, id: ActorId): ActorCapability^{this}
   def workflow: WorkflowCapability^{this}
 ```
@@ -500,8 +500,8 @@ inherits the root's lifetime — **no sub-capability can escape `run`.**
 flowchart TD
   Run["Dapr(config).run { ... }"] --> Root["DaprCapability"]
   Root --> S["StateCapability^{this}"]
-  Root --> P["PubSubCapability^{this}"]
-  Root --> I["ServiceInvocationCapability^{this}"]
+  Root --> P["PublishCapability^{this}"]
+  Root --> I["InvokeCapability^{this}"]
   Root --> W["WorkflowCapability^{this}"]
   Escape["stored in a val · sent to another thread · returned in a closure"]
   S -. "compile error: capability cannot escape" .-> Escape
@@ -546,7 +546,7 @@ dapr4s never passes a bare `String` where a domain concept belongs:
 
 ```scala
 StateStoreName("statestore")   ActorType("CounterActor")   Topic("HelloTopic")
-StateStoreKey("hello-note")    AppId("greeting-service")    InvocationMethodName("greet")
+StateStoreKey("hello-note")    AppId("greeting-service")    InvokeMethodName("greet")
 ```
 
 These are **opaque types** — zero runtime cost, but the compiler won't let you
@@ -599,7 +599,7 @@ under the hood (`.block()` on the SDK's `Mono`/`Flux`).
 | 1 | State CRUD, ETag, txns | capability can't outlive its scope |
 | 2 | Secrets + live config | multiple capabilities at once |
 | 3 | Pub/Sub | handler capture tracked across the boundary |
-| 4 | Service invocation | typed `InvocationRoute` request/response |
+| 4 | Service invocation | typed `InvokeRoute` request/response |
 | 5 | Distributed lock | exclusive capability ⇒ try/unlock pairing |
 | 6 | Virtual actors | per-invocation `ActorContext` |
 | 7 | Durable workflows | `Task[O]` can't be awaited outside the run |
@@ -671,8 +671,8 @@ def readSecrets()(using DaprCapability): (Option[SecretValue], Seq[String]) =
     val allKeys = SecretsCapability.getBulk().keys.map(_.value).toSeq.sorted
     (apiKey, allKeys)
 
-def readConfig()(using DaprCapability): Map[ConfigKey, ConfigItem] =
-  DaprCapability.config(ConfigStoreName("configstore")):
+def readConfig()(using DaprCapability): Map[ConfigurationKey, ConfigurationItem] =
+  DaprCapability.configuration(ConfigurationStoreName("configstore")):
     ConfigurationCapability.get(configKeys)
 ```
 
@@ -685,19 +685,19 @@ Two independent scopes from the same root. **Live config subscription**
 
 ```scala
 def onMessage(event: CloudEvent[Message])
-             (using PubSubCapability, JsonCodec[Message]): SubscriptionResult =
-  PubSubCapability.publish(Topic("hello-replies"), event.data.copy(from = "subscriber"))
+             (using PublishCapability, JsonCodec[Message]): SubscriptionResult =
+  PublishCapability.publish(Topic("hello-replies"), event.data.copy(from = "subscriber"))
   SubscriptionResult.Success
 
 object SubscriberApp:
   def apply()(using DaprCapability, JsonCodec[Message]): DaprApp =
-    DaprCapability.pubsub(PubSubComponent):
+    DaprCapability.publish(PubSubComponent):
       DaprApp(subscriptions = List(
         Subscription[Message](PubSubComponent, MessageTopic)(onMessage)
       ))
 ```
 
-The handler **captures** `PubSubCapability`; the compiler tracks that capture
+The handler **captures** `PublishCapability`; the compiler tracks that capture
 all the way to `Subscription`. Messages arrive as typed **`CloudEvent[Message]`** —
 no manual envelope parsing.
 
@@ -718,13 +718,13 @@ def greet(req: GreetRequest)(using StateCapability, JsonCodec[ServiceStats]): Gr
 object CalleeApp:
   def apply()(using DaprCapability, ...): DaprApp =
     DaprCapability.state(StatStore):
-      DaprApp(invocations = List(
-        InvocationRoute[GreetRequest, GreetResponse](InvocationMethodName("greet"))(greet),
-        InvocationRoute[Unit, StatsResponse](InvocationMethodName("stats"))(_ => stats()),
+      DaprApp(invokeRoutes = List(
+        InvokeRoute[GreetRequest, GreetResponse](InvokeMethodName("greet"))(greet),
+        InvokeRoute[Unit, StatsResponse](InvokeMethodName("stats"))(_ => stats()),
       ))
 ```
 
-`InvocationRoute[In, Out]` ties the wire contract to the handler's *types*.
+`InvokeRoute[In, Out]` ties the wire contract to the handler's *types*.
 
 ---
 
@@ -733,18 +733,18 @@ object CalleeApp:
 ```scala
 object CallerApp:
   def apply()(using DaprCapability, ...): CallerResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       val target = AppId("greeting-service")
       val greetings = requests.map: req =>
-        ServiceInvocationCapability
-          .invoke[GreetRequest](target, InvocationMethodName("greet"), req, HttpMethod.Post)[GreetResponse]
-      val s = ServiceInvocationCapability.invoke[StatsResponse](target, InvocationMethodName("stats"))
+        InvokeCapability
+          .invoke[GreetRequest](target, InvokeMethodName("greet"), req, HttpMethod.Post)[GreetResponse]
+      val s = InvokeCapability.invoke[StatsResponse](target, InvokeMethodName("stats"))
       CallerResult(greetings, s)
 ```
 
 - Call by **`AppId`**, not host:port — Dapr resolves it, over mTLS
 - `invoke[In](...)[Out]` — request and response types are both explicit
-- No client to close — the `invoker` capability is reclaimed at the scope end
+- No client to close — the `invoke` capability is reclaimed at the scope end
 
 ---
 
@@ -759,14 +759,14 @@ object DistributedLockApp:
         val resource = LockResourceId("my-resource")
         for i <- 1 to N do
           val owner = LockOwner(s"worker-$i")
-          if DistributedLockCapability.tryLock(resource, owner, expiry = lockExpiry) then
+          if LockCapability.tryLock(resource, owner, expiry = lockExpiry) then
             try
               val v = StateCapability.get[Int](counter).getOrElse(0)
               StateCapability.save(counter, v + 1)
-            finally DistributedLockCapability.unlock(resource, owner)
+            finally LockCapability.unlock(resource, owner)
 ```
 
-`DistributedLockCapability` is **exclusive** — the compiler forbids handing it
+`LockCapability` is **exclusive** — the compiler forbids handing it
 to another thread's closure. Lock/unlock pairing is structural (`try/finally`).
 `expiry` is a `FiniteDuration` built in the shell (safe code can't construct one).
 
@@ -776,13 +776,13 @@ to another thread's closure. Lock/unlock pairing is structural (`try/finally`).
 
 ```scala
       val secondAcquire =
-        if DistributedLockCapability.tryLock(resource, ownerA, expiry = lockExpiry) then
-          val second = DistributedLockCapability.tryLock(resource, ownerB, expiry = shortExpiry)
-          DistributedLockCapability.unlock(resource, ownerA)
+        if LockCapability.tryLock(resource, ownerA, expiry = lockExpiry) then
+          val second = LockCapability.tryLock(resource, ownerB, expiry = shortExpiry)
+          LockCapability.unlock(resource, ownerA)
           second          // false — B can't acquire while A holds it
         else false
 
-      val afterRelease = DistributedLockCapability.tryLock(resource, ownerB, expiry = lockExpiry)
+      val afterRelease = LockCapability.tryLock(resource, ownerB, expiry = lockExpiry)
       // true — now that A released, B succeeds
 ```
 
@@ -932,7 +932,7 @@ def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit 
 
 DaprCapability.state(StateStore): DaprCapability.jobs:
   DaprApp(
-    invocations = List(InvocationRoute[String, String](InvocationMethodName("schedule"))(scheduleDemo)),
+    invokeRoutes = List(InvokeRoute[String, String](InvokeMethodName("schedule"))(scheduleDemo)),
     jobs        = List(JobRoute[String](DemoJob)(onJobFired)),   // sidecar POSTs to /job/DemoJob
   )
 ```
@@ -968,8 +968,8 @@ the demo is deterministic with no real LLM provider.
 flowchart LR
   Client(["caller"])
   subgraph App["BindingsExampleApp — pure, capture-checked"]
-    CRE["InvocationRoute<br/>/create"]
-    ENQ["InvocationRoute<br/>/enqueue"]
+    CRE["InvokeRoute<br/>/create"]
+    ENQ["InvokeRoute<br/>/enqueue"]
     BR["BindingRoute<br/>(orders-queue)"]
   end
   Sidecar["Dapr sidecar"]
@@ -1008,13 +1008,13 @@ so they're plain `val`s (not `given`s) — no ambiguous implicit.
 ## 11 · Bindings — the code
 
 ```scala
-val ordersQueue     = cap.binding(OrdersQueue)      // Kafka — bidirectional
-val jsonPlaceholder = cap.binding(JsonPlaceholder)  // HTTP  — output (jsonplaceholder.typicode.com)
+val ordersQueue     = cap.bindings(OrdersQueue)      // Kafka — bidirectional
+val jsonPlaceholder = cap.bindings(JsonPlaceholder)  // HTTP  — output (jsonplaceholder.typicode.com)
 
 DaprCapability.state(StateStore):
   DaprApp(
-    invocations = List(
-      InvocationRoute[PostRef, String](InvocationMethodName("enqueue")): ref =>
+    invokeRoutes = List(
+      InvokeRoute[PostRef, String](InvokeMethodName("enqueue")): ref =>
         ordersQueue.invokeOneWay(BindingOperation("create"), ref)       // OUTPUT → Kafka
         s"enqueued post ${ref.postId}",
     ),
@@ -1077,24 +1077,24 @@ Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
 
 ## A note before we start: deriving the wiring
 
-The eleven examples **hand-wrote** the reified model — explicit `InvocationRoute[...]`
-lists, `PubSubCapability.publish` calls, `extends WorkflowActivity`. The case studies that
+The eleven examples **hand-wrote** the reified model — explicit `InvokeRoute[...]`
+lists, `PublishCapability.publish` calls, `extends WorkflowActivity`. The case studies that
 follow (12–14) use dapr4s's **derivation** instead: describe a trait, object, or class, and
 `dapr4s.derivation` generates the facade. *Same types, same capture-checking, less
 boilerplate.* (Distinct from JSON-codec derivation — this derives the *routes/clients*.)
 
 ```scala
 // before — the explicit caller from example 4
-ServiceInvocationCapability
-  .invoke[GreetRequest](AppId("greeting-service"), InvocationMethodName("greet"), req)[GreetResponse]
+InvokeCapability
+  .invoke[GreetRequest](AppId("greeting-service"), InvokeMethodName("greet"), req)[GreetResponse]
 
 // after — describe it once, let dapr4s implement it
 trait GreetingService:
-  def greet(req: GreetRequest)(using ServiceInvocationCapability,
+  def greet(req: GreetRequest)(using InvokeCapability,
       JsonCodec[GreetRequest], JsonCodec[GreetResponse]): GreetResponse
-def GreetingService(appId: AppId): GreetingService = ServiceInvocation.derive[GreetingService](appId)
+def GreetingService(appId: AppId): GreetingService = Invoke.derive[GreetingService](appId)
 
-GreetingService(AppId("greeting-service")).greet(req)   // method name → InvocationMethodName; types preserved
+GreetingService(AppId("greeting-service")).greet(req)   // method name → InvokeMethodName; types preserved
 ```
 
 A **transparent inline macro** expands to the *exact* reified calls above — no runtime
@@ -1112,7 +1112,7 @@ is all you need.
 
 | Engine | Method → name | Engine | Method → name |
 |---|---|---|---|
-| `ServiceInvocation` / `Bindings` / `Actor` | invoke | `PubSub` | publish → `Topic` |
+| `Invoke` / `Bindings` / `Actor` | invoke | `Publish` | publish → `Topic` |
 | `Secrets` / `Configuration` | get → key | `Crypto` | encrypt → `CryptoKeyName` |
 | `Jobs` | schedule → `JobName` | `Workflow` | start → `WorkflowName` |
 | `State` / `ActorState` | `def x` / `def x_=` | `WorkflowEvents` | waitForExternalEvent |
@@ -1123,7 +1123,7 @@ trait Counter:                                   // State / ActorState: getter +
   def count(using StateCapability, JsonCodec[Int]): Option[Int]
   def count_=(v: Int)(using StateCapability, JsonCodec[Int]): Unit
 
-val routes = InvocationRoutes.derive[GatewayRoutes.type]   // server side: an object of methods → routes
+val routes = InvokeRoutes.derive[GatewayRoutes.type]   // server side: an object of methods → routes
 ```
 
 > The explicit reified API stays the foundation; derivation is an opt-in convenience on top.
@@ -1224,18 +1224,18 @@ fleet, and acks the caller. The `ScanTopics` publisher and the invocation route 
 
 ```scala
 trait ScanTopics:                                              // scanRequested → Topic("scanRequested")
-  def scanRequested(r: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
-lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
+  def scanRequested(r: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): Unit
+lazy val ScanTopics: ScanTopics = Publish.derive[ScanTopics]
 
 object GatewayRoutes:
-  def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
+  def submit(req: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): SubmitResponse =
     ScanTopics.scanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
   def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
-    DaprCapability.pubsub(PubSubComponent):
-      DaprApp(invocations = InvocationRoutes.derive[GatewayRoutes.type])
+    DaprCapability.publish(PubSubComponent):
+      DaprApp(invokeRoutes = InvokeRoutes.derive[GatewayRoutes.type])
 ```
 
 A caller `POST`s an image; the gateway publishes it and acks. The seed driver
@@ -1255,7 +1255,7 @@ exhaust the retry policy into the dead-letter topic. The subscription's topic an
 object WorkerRoutes:
   @deadLetter("scanDeadLetter")
   def scanRequested(e: CloudEvent[ScanRequest])(using
-      StateCapability, PubSubCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
+      StateCapability, PublishCapability, JsonCodec[SeenMarker], JsonCodec[Int], JsonCodec[ScanResult]
   ): SubscriptionResult =
     val req = e.data
     if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then SubscriptionResult.Drop  // done
@@ -1370,20 +1370,20 @@ The cross-service call is a derived `InventoryClient`; the activity just calls i
 
 ```scala
 trait InventoryClient:
-  def reserve(req: ReserveRequest)(using ServiceInvocationCapability,
+  def reserve(req: ReserveRequest)(using InvokeCapability,
       JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult
-def InventoryClient(appId: AppId): InventoryClient = ServiceInvocation.derive[InventoryClient](appId)
+def InventoryClient(appId: AppId): InventoryClient = Invoke.derive[InventoryClient](appId)
 
 class OrderActivities:                                   // just a class — methods, not subclasses
   def reserve(o: OrderRequest)(using DaprCapability,
       JsonCodec[ReserveRequest], JsonCodec[ReservationResult]): ReservationResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       InventoryClient(InventoryService).reserve(ReserveRequest(o.orderId, o.sku, o.quantity))
 ```
 
 The **pure** `13-order-service` module holds the entire saga — DTOs, derived clients,
 activities, the orchestration, and the workflow-client driver. The downstream services
-(`reserve`/`charge`/`dispatch`) likewise register their routes with `InvocationRoutes.derive`.
+(`reserve`/`charge`/`dispatch`) likewise register their routes with `InvokeRoutes.derive`.
 
 ---
 
@@ -1512,7 +1512,7 @@ Before, these were code-review comments. Now they're **compile errors**:
 
 - A Dapr client **cannot be used after its scope closes** — `^{this}` lifetimes
 - A capability **cannot escape** into a stored closure or another thread
-- A handler's request/response **types match the wire contract** — `InvocationRoute[In,Out]`
+- A handler's request/response **types match the wire contract** — `InvokeRoute[In,Out]`
 - `Task[O]` from a workflow **cannot be awaited outside the run** — replay-safe
 - A `Topic` **cannot be passed where a `StateStoreName` is expected** — opaque types
 - I/O **cannot hide** inside "pure" business logic — safe mode + `@rejectSafe`
@@ -1601,7 +1601,7 @@ the effect* their argument carries.
 
 ## Honest trade-offs & current status
 
-- Built on **Scala 3.9 nightly** capture checking — *experimental*, syntax still moving
+- Built on **Scala 3.10 nightly** capture checking — *experimental*, syntax still moving
 - The trusted core needs `@assumeSafe` at every Java/macro boundary
   - Mitigated: it's small, audited, and **one place per shell** in the examples
 - Capture checking has rough edges (compile-time blowups with many opaque types;
@@ -1711,4 +1711,4 @@ docs.dapr.io · scala-lang.org capture checking
 - **Complexity** — Moseley & Marks, *Out of the Tar Pit* (2006) — essential vs. accidental, state & control
 - **dapr4s** — `DESIGN.md`, `SPEC.allium`, and the `wiki/` knowledge base in the repo
 
-<span class="small">Examples and the dapr4s library target Scala 3.9 nightly with experimental capture checking enabled.</span>
+<span class="small">Examples and the dapr4s library target Scala 3.10 nightly with experimental capture checking enabled.</span>

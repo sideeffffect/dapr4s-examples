@@ -40,8 +40,8 @@ def scan(req: ScanRequest): ScanResult =
 
 // Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def scanCompleted(r: ScanResult)(using PubSubCapability, JsonCodec[ScanResult]): Unit
-lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
+  def scanCompleted(r: ScanResult)(using PublishCapability, JsonCodec[ScanResult]): Unit
+lazy val ScanTopics: ScanTopics = Publish.derive[ScanTopics]
 
 // Derived subscription: method name (camelCase, verbatim) → Topic, @deadLetter → dead-letter topic.
 // The handler body keeps the explicit StateCapability calls — idempotency/retry logic over *dynamic*
@@ -50,7 +50,7 @@ object WorkerRoutes:
   @deadLetter("scanDeadLetter")
   def scanRequested(event: CloudEvent[ScanRequest])(using
       StateCapability,
-      PubSubCapability,
+      PublishCapability,
       JsonCodec[SeenMarker],
       JsonCodec[Int],
       JsonCodec[ScanResult],
@@ -76,5 +76,5 @@ object WorkerApp:
       JsonCodec[ScanResult],
   ): DaprApp =
     DaprCapability.state(StateStore):
-      DaprCapability.pubsub(PubSubComponent):
+      DaprCapability.publish(PubSubComponent):
         DaprApp(subscriptions = Subscriptions.derive[WorkerRoutes.type](PubSubComponent))

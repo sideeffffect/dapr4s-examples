@@ -21,7 +21,7 @@ def charge(req: ChargeRequest): PaymentResult =
 
 def refund(req: RefundRequest): Unit = ()
 
-// Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
+// Derived invocation routes: each method → an InvokeRoute (name → InvokeMethodName).
 object PaymentRoutes:
   def charge(req: ChargeRequest): PaymentResult = paymentservice.charge(req)
   def refund(req: RefundRequest): Unit = paymentservice.refund(req)
@@ -33,4 +33,4 @@ object PaymentApp:
       JsonCodec[RefundRequest],
       JsonCodec[Unit],
   ): DaprApp =
-    DaprApp(invocations = InvocationRoutes.derive[PaymentRoutes.type])
+    DaprApp(invokeRoutes = InvokeRoutes.derive[PaymentRoutes.type])

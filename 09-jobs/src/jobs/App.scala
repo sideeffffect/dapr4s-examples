@@ -12,7 +12,7 @@ import dapr4s.*
 //
 // Both JobsCapability and StateCapability are ExclusiveCapabilities introduced by
 // the enclosing DaprCapability scopes; the route lambdas capture them, and the
-// @assumeSafe boundaries inside InvocationRoute/JobRoute erase the capture set.
+// @assumeSafe boundaries inside InvokeRoute/JobRoute erase the capture set.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val StateStore = StateStoreName("statestore")
@@ -34,8 +34,8 @@ object JobsServerApp:
     DaprCapability.state(StateStore):
       DaprCapability.jobs:
         DaprApp(
-          invocations = List(
-            InvocationRoute[String, String](InvocationMethodName("schedule"))(scheduleDemo),
+          invokeRoutes = List(
+            InvokeRoute[String, String](InvokeMethodName("schedule"))(scheduleDemo),
           ),
           jobs = List(
             JobRoute[String](DemoJob)(onJobFired),

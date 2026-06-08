@@ -13,7 +13,7 @@ val StatsKey = StateStoreKey("service-stats")
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // All state is stored as a single ServiceStats object, so only one codec
-// instance is needed for state operations.  InvocationRoute and caller
+// instance is needed for state operations.  InvokeRoute and caller
 // operations need GreetRequest/GreetResponse/StatsResponse codecs; all are
 // passed from the shell so macro derivation stays out of this module.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,10 +51,10 @@ object CalleeApp:
       JsonCodec[Unit],
   ): DaprApp =
     DaprCapability.state(StatStore):
-      DaprApp(invocations =
+      DaprApp(invokeRoutes =
         List(
-          InvocationRoute[GreetRequest, GreetResponse](InvocationMethodName("greet"))(greet),
-          InvocationRoute[Unit, StatsResponse](InvocationMethodName("stats"))(_ => stats()),
+          InvokeRoute[GreetRequest, GreetResponse](InvokeMethodName("greet"))(greet),
+          InvokeRoute[Unit, StatsResponse](InvokeMethodName("stats"))(_ => stats()),
         ),
       )
 
@@ -62,7 +62,7 @@ object CalleeApp:
 
 // Remote calls are addressed by AppId; `invoke[In](appId, method, body)[Out]` ties both
 // the request and response types to the wire. The no-body overload (used for `stats`)
-// matches the callee's `InvocationRoute[Unit, StatsResponse]`.
+// matches the callee's `InvokeRoute[Unit, StatsResponse]`.
 object CallerApp:
   def apply()(using
       DaprCapability,
@@ -70,7 +70,7 @@ object CallerApp:
       JsonCodec[GreetResponse],
       JsonCodec[StatsResponse],
   ): CallerResult =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       val target = AppId("greeting-service")
       val requests = List(
         GreetRequest("Alice", "en"),
@@ -80,6 +80,6 @@ object CallerApp:
         GreetRequest("Eve", "jp"),
       )
       val greetings = requests.map: req =>
-        ServiceInvocationCapability.invoke(target, InvocationMethodName("greet"), req)[GreetResponse]
-      val s = ServiceInvocationCapability.invoke[StatsResponse](target, InvocationMethodName("stats"))
+        InvokeCapability.invoke(target, InvokeMethodName("greet"), req)[GreetResponse]
+      val s = InvokeCapability.invoke[StatsResponse](target, InvokeMethodName("stats"))
       CallerResult(greetings, s)

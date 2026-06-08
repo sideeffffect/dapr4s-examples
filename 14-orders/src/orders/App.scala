@@ -32,15 +32,15 @@ val PubSubComponent = PubSubName("pubsub")
 // Derived cross-service client + publisher (method name maps verbatim to the Dapr name).
 trait PricingClient:
   def quote(req: QuoteRequest)(using
-      ServiceInvocationCapability,
+      InvokeCapability,
       JsonCodec[QuoteRequest],
       JsonCodec[PriceQuote],
   ): PriceQuote
-def PricingClient(appId: AppId): PricingClient = ServiceInvocation.derive[PricingClient](appId)
+def PricingClient(appId: AppId): PricingClient = Invoke.derive[PricingClient](appId)
 
 trait OrderTopics:
-  def orderCompleted(e: OrderEvent)(using PubSubCapability, JsonCodec[OrderEvent]): Unit
-lazy val OrderTopics: OrderTopics = PubSub.derive[OrderTopics]
+  def orderCompleted(e: OrderEvent)(using PublishCapability, JsonCodec[OrderEvent]): Unit
+lazy val OrderTopics: OrderTopics = Publish.derive[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
 // A plain class of activity methods — no `extends WorkflowActivity`, no manual
@@ -58,7 +58,7 @@ class OrderActivities:
   // Calls the downstream pricing service over Dapr service invocation. This is the
   // cross-service hop that makes the distributed trace interesting.
   def quotePrice(req: OrderRequest)(using DaprCapability, JsonCodec[QuoteRequest], JsonCodec[PriceQuote]): PriceQuote =
-    DaprCapability.invoker:
+    DaprCapability.invoke:
       PricingClient(PricingService).quote(QuoteRequest(req.item, req.quantity))
 
   def chargePayment(in: ChargeInput)(using DaprCapability): PaymentResult =
@@ -71,7 +71,7 @@ class OrderActivities:
   // Publishes the terminal order event to pub/sub. The audit subscription below
   // consumes it, adding a publish + deliver span to the trace.
   def publishOrderEvent(event: OrderEvent)(using DaprCapability, JsonCodec[OrderEvent]): Unit =
-    DaprCapability.pubsub(PubSubComponent):
+    DaprCapability.publish(PubSubComponent):
       OrderTopics.orderCompleted(event)
 
 // Typed caller the workflow schedules activities through (derived from OrderActivities;
@@ -124,7 +124,7 @@ class OrderWorkflow(using
 
 // Derived subscription: method name (camelCase, verbatim) → Topic.
 object OrderSubscriptions:
-  def orderCompleted(event: CloudEvent[OrderEvent])(using PubSubCapability, JsonCodec[OrderEvent]): SubscriptionResult =
+  def orderCompleted(event: CloudEvent[OrderEvent])(using PublishCapability, JsonCodec[OrderEvent]): SubscriptionResult =
     val _ = event.data
     SubscriptionResult.Success
 
@@ -144,7 +144,7 @@ object ServerApp:
       JsonCodec[OrderResult],
       JsonCodec[Unit],
   ): DaprApp =
-    DaprCapability.pubsub(PubSubComponent):
+    DaprCapability.publish(PubSubComponent):
       DaprApp(
         workflows = List(new OrderWorkflow),
         activities = WorkflowActivities.derive[OrderActivities],

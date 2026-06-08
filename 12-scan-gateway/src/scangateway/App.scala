@@ -9,8 +9,8 @@ import dapr4s.derivation.*
 // publishes each request onto the `scanRequested` topic for the worker fleet.
 //
 // Fully derived: the publisher and the invocation route are both generated from
-// trait/object descriptions — no reified `PubSubCapability.publish`, no
-// `InvocationRoute[...]` list.
+// trait/object descriptions — no reified `PublishCapability.publish`, no
+// `InvokeRoute[...]` list.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val PubSubComponent = PubSubName("pubsub")
@@ -20,19 +20,19 @@ case class SubmitResponse(accepted: Boolean, scanId: String)
 
 // Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def scanRequested(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): Unit
-lazy val ScanTopics: ScanTopics = PubSub.derive[ScanTopics]
+  def scanRequested(req: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): Unit
+lazy val ScanTopics: ScanTopics = Publish.derive[ScanTopics]
 
-// Derived invocation routes: each method → an InvocationRoute (name → InvocationMethodName).
+// Derived invocation routes: each method → an InvokeRoute (name → InvokeMethodName).
 object GatewayRoutes:
-  def submit(req: ScanRequest)(using PubSubCapability, JsonCodec[ScanRequest]): SubmitResponse =
+  def submit(req: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): SubmitResponse =
     ScanTopics.scanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
 object GatewayApp:
   def apply()(using DaprCapability, JsonCodec[ScanRequest], JsonCodec[SubmitResponse]): DaprApp =
-    DaprCapability.pubsub(PubSubComponent):
-      DaprApp(invocations = InvocationRoutes.derive[GatewayRoutes.type])
+    DaprCapability.publish(PubSubComponent):
+      DaprApp(invokeRoutes = InvokeRoutes.derive[GatewayRoutes.type])
 
 // ── Seed driver (stands in for the SQS input binding) ─────────────────────────
 // Includes a duplicate scan-3 (the worker must dedup it) and a "flaky" source
@@ -48,7 +48,7 @@ def seedRequests: List[ScanRequest] =
   )
 
 def runSeed()(using DaprCapability, JsonCodec[ScanRequest]): List[String] =
-  DaprCapability.pubsub(PubSubComponent):
+  DaprCapability.publish(PubSubComponent):
     val topics = ScanTopics
     seedRequests.map: req =>
       topics.scanRequested(req)

@@ -19,7 +19,7 @@ private def basePrice(item: String): Double =
   val h = math.abs(item.hashCode % 900) + 100 // 100..999 cents
   h / 100.0
 
-// Derived invocation route: `quote` → InvocationMethodName("quote").
+// Derived invocation route: `quote` → InvokeMethodName("quote").
 object PricingRoutes:
   def quote(req: QuoteRequest): PriceQuote =
     val unit = basePrice(req.item)
@@ -31,4 +31,4 @@ object PricingApp:
       JsonCodec[QuoteRequest],
       JsonCodec[PriceQuote],
   ): DaprApp =
-    DaprApp(invocations = InvocationRoutes.derive[PricingRoutes.type])
+    DaprApp(invokeRoutes = InvokeRoutes.derive[PricingRoutes.type])

@@ -14,8 +14,8 @@ def readSecrets()(using DaprCapability): (Option[SecretValue], Seq[String]) =
     val allKeys = SecretsCapability.getBulk().keys.map(_.value).toSeq.sorted
     (apiKey, allKeys)
 
-val configKeys: Seq[ConfigKey] = Seq(ConfigKey("greeting"), ConfigKey("max-retries"))
+val configKeys: Seq[ConfigurationKey] = Seq(ConfigurationKey("greeting"), ConfigurationKey("max-retries"))
 
-def readConfig()(using DaprCapability): Map[ConfigKey, ConfigItem] =
-  DaprCapability.config(ConfigStoreName("configstore")):
+def readConfig()(using DaprCapability): Map[ConfigurationKey, ConfigurationItem] =
+  DaprCapability.configuration(ConfigurationStoreName("configstore")):
     ConfigurationCapability.get(configKeys)

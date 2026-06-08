@@ -12,7 +12,7 @@ import dapr4s.derivation.*
 case class ShipRequest(orderId: String, address: String)
 case class ShipmentResult(dispatched: Boolean, trackingId: String)
 
-// Derived invocation route: `dispatch` → InvocationMethodName("dispatch").
+// Derived invocation route: `dispatch` → InvokeMethodName("dispatch").
 object ShippingRoutes:
   def dispatch(req: ShipRequest): ShipmentResult =
     val ok = req.address.nonEmpty
@@ -20,4 +20,4 @@ object ShippingRoutes:
 
 object ShippingApp:
   def apply()(using JsonCodec[ShipRequest], JsonCodec[ShipmentResult]): DaprApp =
-    DaprApp(invocations = InvocationRoutes.derive[ShippingRoutes.type])
+    DaprApp(invokeRoutes = InvokeRoutes.derive[ShippingRoutes.type])
