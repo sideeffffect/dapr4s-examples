@@ -379,8 +379,10 @@ Compile a module with `-language:experimental.safe` and you opt into
 | Effect tracking required | must compile with capture checking |
 | Safe deps only | may only call other safe-compiled code |
 
-> The type checker *becomes* the security boundary. (This is the same
-> mechanism EPFL proposes for sandboxing AI-agent-generated code.)
+> The type checker *becomes* the security boundary — in fact, sandboxing
+> untrustworthy **AI-agent-generated code** is the very problem safe mode was
+> designed for (EPFL). The same strictness, it turns out, makes *human* code
+> easier to read too.
 
 ---
 
@@ -1636,6 +1638,35 @@ The pure arrow `A -> B` is the compiler **proving** the transform can't log, sto
 or phone home — the same machinery dapr4s uses for Dapr clients, aimed at untrusted code.
 
 > "You can't trust your agents … you have to be much more surgical in what they can do." — **Martin Odersky**
+
+---
+
+## Nine lessons worth keeping
+
+<div class="small">
+
+**Safe Scala — effects you can see**
+
+1. A **capability tracks an effect** — hold one, and the type says so.
+2. **Capture checking** stops a capability being smuggled **out *or* in** through a closure or object.
+3. So **effects are always visible in the types** — nothing performs I/O in secret.
+
+**Dapr — accidental complexity, lifted out**
+
+4. Dapr hides the typical infra/plumbing behind one **language-agnostic API**, so you write only the **essential** business logic.
+5. Its design **fits Scala beautifully** — every building block becomes a **capability**.
+
+**Where the two meet**
+
+6. Each method's signature **declares which Dapr powers it uses** — and, by omission, **which it can't reach for** inside.
+7. Safe Scala was **born as a harness for AI agents** — agents aren't trustworthy, so the code they generate must be checked *strictly*.
+8. That **same strictness helps humans** — the types make the code easy to understand.
+9. So Safe Scala isn't a purely **academic** exercise — it's a tool for **ordinary engineers doing ordinary work**.
+
+</div>
+
+> Dapr removes the accidental complexity of *distribution*; Safe Scala makes the
+> *effects that remain* impossible to lose track of.
 
 ---
 
