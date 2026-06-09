@@ -44,7 +44,7 @@ lazy val OrderTopics: OrderTopics = Publish.derive[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
 // A plain class of activity methods — no `extends WorkflowActivity`, no manual
-// registration. `WorkflowActivities.derive[OrderActivities]` (in ServerApp) reifies
+// registration. `WorkflowActivities.deriveChecked[OrderActivityCalls, OrderActivities]` (in ServerApp) reifies
 // one WorkflowActivity per method; `OrderActivityCalls` (below) is the typed caller
 // the workflow uses. Each method receives a DaprCapability per call, so the I/O
 // activities (quotePrice via service invocation, publishOrderEvent via pub/sub) may
@@ -99,7 +99,7 @@ class OrderWorkflow(using
     JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
-    val acts  = WorkflowActivityCalls.derive[OrderActivityCalls, OrderActivities]
+    val acts  = WorkflowActivityCalls.deriveChecked[OrderActivityCalls, OrderActivities]
     val order = WorkflowContext.getInput[OrderRequest].getOrElse(throw RuntimeException("no input"))
 
     val reservation = acts.reserveInventory(order).await()
@@ -147,6 +147,6 @@ object ServerApp:
     DaprCapability.publish(PubSubComponent):
       DaprApp(
         workflows = List(new OrderWorkflow),
-        activities = WorkflowActivities.derive[OrderActivities],
-        subscriptions = Subscriptions.derive[OrderSubscriptions.type](PubSubComponent),
+        activities = WorkflowActivities.deriveChecked[OrderActivityCalls, OrderActivities],
+        subscriptions = Subscriptions.deriveChecked[OrderTopics, OrderSubscriptions.type](PubSubComponent),
       )

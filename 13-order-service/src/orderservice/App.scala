@@ -113,7 +113,7 @@ object DriverApp:
 
 // ── Activities — each performs one cross-service call ─────────────────────────
 // A plain class of activity methods — no `extends WorkflowActivity`, no manual
-// registration. `WorkflowActivities.derive[OrderActivities]` (in ServerApp) reifies
+// registration. `WorkflowActivities.deriveChecked[OrderActivityCalls, OrderActivities]` (in ServerApp) reifies
 // one WorkflowActivity per method; `OrderActivityCalls` (below) is the typed caller
 // the saga uses. Pure under safe mode: each method receives the DaprCapability per
 // call and uses it only within that call (never stored); the JsonCodecs the bodies
@@ -164,7 +164,7 @@ class OrderProcessingWorkflow(using
     JsonCodec[Unit],
 ) extends Workflow:
   def run(using WorkflowContext): Unit =
-    val acts = WorkflowActivityCalls.derive[OrderActivityCalls, OrderActivities]
+    val acts = WorkflowActivityCalls.deriveChecked[OrderActivityCalls, OrderActivities]
     val order = WorkflowContext
       .getInput[OrderRequest]
       .getOrElse:
@@ -217,6 +217,6 @@ object ServerApp:
     DaprCapability.workflow:
       DaprApp(
         workflows = List(new OrderProcessingWorkflow),
-        activities = WorkflowActivities.derive[OrderActivities],
+        activities = WorkflowActivities.deriveChecked[OrderActivityCalls, OrderActivities],
         invokeRoutes = InvokeRoutes.derive[OrderRoutes.type],
       )
