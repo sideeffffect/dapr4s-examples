@@ -1,0 +1,10 @@
+{
+  "name": "dapr4s-examples-js-runtime",
+  "private": true,
+  "description": "Runtime npm deps the linked Scala.js example bundles import at run time: @dapr/dapr (the Dapr JS SDK the dapr4s facades wrap) and express (the dapr4s app server). Pinned to the versions dapr4s 0.20.x is built against.",
+  "type": "module",
+  "dependencies": {
+    "@dapr/dapr": "3.18.0",
+    "express": "4.21.2"
+  }
+}

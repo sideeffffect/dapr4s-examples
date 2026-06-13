@@ -307,3 +307,64 @@ final class MultiServerInfra(
 
   override def afterAll(): Unit =
     compose.foreach(_.stop())
+
+/** Dapr infrastructure for the multi-service Scala.js E2E tests (examples 15/16/17).
+  *
+  * The Scala.js twin of [[MultiServerInfra]]: instead of JVM app containers running `java -cp out.jar`, each app is a
+  * Node 25 container running the linked Scala.js Wasm bundle (`node main.js`). Each app still pairs with its own daprd
+  * sidecar (network_mode: service:<app>) on the shared `dapr-net` bridge, so service invocation by app-id (mDNS) and
+  * shared Redis pub/sub + state work exactly as for the JVM examples.
+  *
+  * Every app container mounts three things (see the docker-compose.{15,16,17}-*.yml files): the bundle dir at /app, the
+  * shared `e2e/js/node_modules` (@dapr/dapr + express) at /node_modules, and `e2e/js/esm-marker.json` at /package.json
+  * (so Node treats main.js as an ES module). Node 25 is required for JSPI, which the dapr4s capability layer suspends
+  * the Wasm stack on.
+  *
+  * @param composeFileName
+  *   the compose file under e2e/docker/ to boot.
+  * @param bundles
+  *   compose env-var name -> JS `*-shell` module name (resolved via [[Harness.jsBundleFor]] to its fastLinkJS.dest).
+  * @param daprServices
+  *   the daprd compose service names to wait on (each must log "dapr initialized. Status: Running.").
+  * @param appServices
+  *   compose service names whose app + dapr ports should be exposed to the host.
+  */
+final class MultiNodeInfra(
+    composeFileName: String,
+    bundles: Map[String, String],
+    daprServices: List[String],
+    appServices: List[String],
+) extends Fixture[Nothing](composeFileName):
+
+  private var compose: Option[ComposeContainer] = None
+
+  def apply(): Nothing = throw UnsupportedOperationException(s"$fixtureName is a lifecycle fixture")
+
+  /** Host-mapped app HTTP port (container 8080) for the given compose service. */
+  def appPort(service: String): Int = compose.get.getServicePort(service, 8080)
+
+  /** Host-mapped Dapr HTTP port (container 3500) for the given compose service. */
+  def daprPort(service: String): Int = compose.get.getServicePort(service, 3500)
+
+  override def beforeAll(): Unit =
+    val c = ComposeContainer(composeFile(composeFileName))
+    c.withLocalCompose(true)
+    c.withEnv("COMPONENTS_PATH", prepareComponents().toString)
+    c.withEnv("NODE_MODULES", (Harness.ProjectRoot / "e2e" / "js" / "node_modules").toString)
+    c.withEnv("ESM_PKG", (Harness.ProjectRoot / "e2e" / "js" / "esm-marker.json").toString)
+    bundles.foreach((envVar, module) => c.withEnv(envVar, Harness.jsBundleFor(module).toString))
+    appServices.foreach { svc =>
+      c.withExposedService(svc, 8080)
+      c.withExposedService(svc, 3500)
+    }
+    daprServices.foreach { svc =>
+      c.waitingFor(
+        svc,
+        Wait.forLogMessage(DaprReadyPattern, 1).withStartupTimeout(Duration.ofMinutes(5)),
+      )
+    }
+    c.start()
+    compose = Some(c)
+
+  override def afterAll(): Unit =
+    compose.foreach(_.stop())

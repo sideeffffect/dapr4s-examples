@@ -32,3 +32,20 @@ object Harness:
             s"(or just this one: ./mill 'NN-$module-shell.assembly')",
         ),
       )
+
+  // Scala.js (15/16/17) twin of jarFor: the linked Wasm bundle dir of a `*-shell` JS module,
+  // i.e. out/<shellModule>/fastLinkJS.dest (holding main.js + main.wasm + __loader.js). Build it
+  // first, e.g. `./mill 15-scan-gateway-shell.fastLinkJS`. `shellModule` is the FULL module name
+  // (e.g. "15-scan-gateway-shell"). An optional `-De2e.bundle.<shellModule>=…` override wins.
+  def jsBundleFor(shellModule: String): os.Path =
+    Option(System.getProperty(s"e2e.bundle.$shellModule"))
+      .map(os.Path(_))
+      .getOrElse {
+        val dest = ProjectRoot / "out" / shellModule / "fastLinkJS.dest"
+        if os.exists(dest / "main.js") then dest
+        else
+          throw RuntimeException(
+            s"No linked Scala.js bundle for '$shellModule' at $dest. " +
+              s"Build first: ./mill '$shellModule.fastLinkJS'",
+          )
+      }

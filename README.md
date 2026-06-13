@@ -34,6 +34,30 @@ Every example is two modules:
 | 12 | Grafana-style scan pipeline (fan-out, dedup, retry, dead-letter queue) — *real-world case study* |
 | 13 | Order-fulfillment saga across inventory / payment / shipping services — *real-world case study* |
 | 14 | Observability & the Diagrid dashboard (OrderWorkflow → service invocation + pub/sub; traces/metrics/logs into SigNoz; workflow state in the Diagrid dashboard) |
+| 15 | Grafana-style scan pipeline **on Scala.js** — the JS twin of 12 |
+| 16 | Order-fulfillment saga **on Scala.js** — the JS twin of 13 |
+| 17 | Telemetry workload (OrderWorkflow → invocation + pub/sub) **on Scala.js** — the JS twin of 14's core |
+
+### Scala.js examples (15 / 16 / 17)
+
+dapr4s cross-compiles to Scala.js (the `dapr4s_sjs1_3` artifact, with the Dapr JS SDK
+facades embedded), so the same `App.scala` runs unchanged on Node. Examples 15–17
+re-implement the real-world case studies 12–14 on Scala.js to prove the published JS
+artifact end to end: each service is the **same pure module** as its JVM twin, with only
+the shell's entry point differing (a single `js.async { Dapr(config).serve … }` at the
+program edge — `serve` suspends the WebAssembly stack via JSPI instead of parking a
+virtual thread). They link with the experimental Wasm backend (`scalaJSExperimentalUseWebAssembly`,
+ES modules, ES2017) and run as Node 25 processes (JSPI is on by default there), each paired
+with its own daprd sidecar — exactly like the JVM examples, but `node main.js` instead of
+`java -cp out.jar`.
+
+```bash
+# Node 25 + the runtime npm deps the bundles import (@dapr/dapr, express):
+(cd e2e/js && npm ci)
+# Link the Wasm bundles, then run the three JS suites:
+./mill 15-scan-gateway-shell.fastLinkJS 16-order-service-shell.fastLinkJS 17-orders-shell.fastLinkJS  # …and the rest
+./mill e2e.testForked '*Js*'
+```
 
 ## Build & test
 

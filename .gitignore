@@ -7,3 +7,4 @@ SLIDES.pdf
 
 # Runtime-downloaded by the init-clickhouse container during the 14 E2E
 e2e/docker/signoz/clickhouse/user_scripts/histogramQuantile
+node_modules/

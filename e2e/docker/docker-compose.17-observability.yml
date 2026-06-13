@@ -1,0 +1,123 @@
+# Infrastructure for the 17 telemetry example (Scala.js) — orders + pricing.
+# JS twin of the core workload of docker-compose.14-observability.yml, WITHOUT the SigNoz/
+# OpenTelemetry stack: the telemetry funnel (daprd -> otel-collector -> SigNoz) is
+# platform-agnostic infrastructure already covered by the JVM example 14, so re-validating
+# it on Scala.js adds nothing. What this validates is the Scala.js app workload: an
+# OrderWorkflow whose activities span service invocation (orders -> pricing) and pub/sub.
+# Workflow needs placement + scheduler + an actor-capable state store.
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  orders:
+    image: node:25-bookworm-slim
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ${BUNDLE_ORDERS}
+        target: /app
+        read_only: true
+      - type: bind
+        source: ${NODE_MODULES}
+        target: /node_modules
+        read_only: true
+      - type: bind
+        source: ${ESM_PKG}
+        target: /package.json
+        read_only: true
+    command: ["node", "main.js"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  orders-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:orders"
+    command:
+      - "./daprd"
+      - "-app-id=orders"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      orders:
+        condition: service_started
+
+  pricing:
+    image: node:25-bookworm-slim
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ${BUNDLE_PRICING}
+        target: /app
+        read_only: true
+      - type: bind
+        source: ${NODE_MODULES}
+        target: /node_modules
+        read_only: true
+      - type: bind
+        source: ${ESM_PKG}
+        target: /package.json
+        read_only: true
+    command: ["node", "main.js"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  pricing-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:pricing"
+    command:
+      - "./daprd"
+      - "-app-id=pricing"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      pricing:
+        condition: service_started
+
+networks:
+  dapr-net:

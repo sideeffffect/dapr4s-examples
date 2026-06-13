@@ -1,0 +1,176 @@
+# Multi-service infrastructure for the 15 Grafana-style scan pipeline (Scala.js).
+# The JS twin of docker-compose.12-scan.yml: three app containers (gateway, worker,
+# results), each a Node 25 process running the linked Scala.js Wasm bundle, paired
+# with its own daprd sidecar sharing the app container's network namespace. All
+# sidecars share one Redis (pub/sub + state), so the gateway's published
+# `scanRequested` events fan out to the worker, and the worker's `scanCompleted`
+# events reach results.
+#
+# Each app mounts: its fastLinkJS bundle dir at /app (main.js + main.wasm + __loader.js),
+# a shared node_modules (@dapr/dapr + express) at /node_modules, and an ESM marker
+# package.json at /package.json so Node treats main.js as an ES module. Node 25 has
+# JSPI on by default, which the dapr4s capability layer needs.
+services:
+  redis:
+    image: redis:6
+    networks: [dapr-net]
+
+  placement:
+    image: daprio/dapr:1.17.7
+    command: ["./placement"]
+    networks: [dapr-net]
+
+  scheduler:
+    image: daprio/dapr:1.17.7
+    command:
+      - "./scheduler"
+      - "--etcd-data-dir=/tmp/etcd"
+      - "--override-broadcast-host-port=scheduler:50006"
+    networks: [dapr-net]
+
+  gateway:
+    image: node:25-bookworm-slim
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ${BUNDLE_GATEWAY}
+        target: /app
+        read_only: true
+      - type: bind
+        source: ${NODE_MODULES}
+        target: /node_modules
+        read_only: true
+      - type: bind
+        source: ${ESM_PKG}
+        target: /package.json
+        read_only: true
+    command: ["node", "main.js"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  gateway-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:gateway"
+    command:
+      - "./daprd"
+      - "-app-id=scan-gateway"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      gateway:
+        condition: service_started
+
+  worker:
+    image: node:25-bookworm-slim
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ${BUNDLE_WORKER}
+        target: /app
+        read_only: true
+      - type: bind
+        source: ${NODE_MODULES}
+        target: /node_modules
+        read_only: true
+      - type: bind
+        source: ${ESM_PKG}
+        target: /package.json
+        read_only: true
+    command: ["node", "main.js"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  worker-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:worker"
+    command:
+      - "./daprd"
+      - "-app-id=scan-worker"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      worker:
+        condition: service_started
+
+  results:
+    image: node:25-bookworm-slim
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ${BUNDLE_RESULTS}
+        target: /app
+        read_only: true
+      - type: bind
+        source: ${NODE_MODULES}
+        target: /node_modules
+        read_only: true
+      - type: bind
+        source: ${ESM_PKG}
+        target: /package.json
+        read_only: true
+    command: ["node", "main.js"]
+    environment:
+      APP_PORT: "8080"
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+    ports:
+      - "8080"
+      - "3500"
+    networks: [dapr-net]
+    depends_on: [redis, placement, scheduler]
+
+  results-dapr:
+    image: daprio/dapr:1.17.7
+    network_mode: "service:results"
+    command:
+      - "./daprd"
+      - "-app-id=scan-results"
+      - "-app-port=8080"
+      - "-dapr-http-port=3500"
+      - "-dapr-grpc-port=50001"
+      - "-components-path=/components"
+      - "-placement-host-address=placement:50005"
+      - "-scheduler-host-address=scheduler:50006"
+    volumes:
+      - type: bind
+        source: ${COMPONENTS_PATH}
+        target: /components
+        read_only: true
+    depends_on:
+      results:
+        condition: service_started
+
+networks:
+  dapr-net:

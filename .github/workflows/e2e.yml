@@ -134,11 +134,14 @@ jobs:
 
       # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
       # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.
-      - name: Run E2E tests (core — all but observability)
+      - name: Run E2E tests (core — all but observability + Scala.js)
         if: matrix.suite == 'core'
         run: ./mill e2e.testForked
         env:
           E2E_SKIP_OBSERVABILITY: '1'
+          # The Scala.js suites (15/16/17) run on the dedicated e2e-scala-js job below,
+          # which sets up Node 25 + npm + the linked Wasm bundles they need.
+          E2E_SKIP_JS: '1'
 
       - name: Run E2E tests (observability only)
         if: matrix.suite == 'observability'
@@ -159,6 +162,71 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.suite }}
+          path: out/e2e/testForked.dest/
+          if-no-files-found: ignore
+
+  # ── Scala.js examples (15/16/17) ──────────────────────────────────────────────
+  # Separate job because the Scala.js examples need a different toolchain than the
+  # JVM ones: Node 25 (JSPI on by default — the dapr4s Wasm capability layer needs
+  # it), npm runtime deps (@dapr/dapr + express, loaded by the linked bundle), and
+  # `fastLinkJS` (Wasm) instead of `assembly`. Each example service runs as a Node
+  # container + daprd sidecar (docker-compose.{15,16,17}-*.yml); the suites are the
+  # JS twins of examples 12/13/14 and validate the published dapr4s_sjs1_3 artifact.
+  e2e-scala-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    name: e2e (scala-js)
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Cache Mill and Coursier
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.cache/mill
+            out
+          key: mill-js-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          restore-keys: |
+            mill-js-${{ hashFiles('.mill-version', 'build.mill') }}-
+            mill-js-
+
+      # JSPI is on by default from Node 25; the linked Wasm bundles suspend on it.
+      - name: Set up Node 25
+        uses: actions/setup-node@v5
+        with:
+          node-version: '25'
+
+      # Runtime npm deps the bundles import at run time (mounted into each app container).
+      - name: Install runtime npm deps (@dapr/dapr + express)
+        run: npm ci
+        working-directory: e2e/js
+
+      # Link each example service to a Wasm ES-module bundle (out/<shell>/fastLinkJS.dest).
+      - name: Link Scala.js example bundles (Wasm)
+        run: >-
+          ./mill
+          15-scan-gateway-shell.fastLinkJS 15-scan-worker-shell.fastLinkJS 15-scan-results-shell.fastLinkJS
+          16-order-service-shell.fastLinkJS 16-inventory-service-shell.fastLinkJS
+          16-payment-service-shell.fastLinkJS 16-shipping-service-shell.fastLinkJS
+          17-orders-shell.fastLinkJS 17-pricing-shell.fastLinkJS
+
+      # The `*Js*` glob selects exactly the three Scala.js suites (Example15/16/17…JsTest).
+      - name: Run Scala.js E2E tests (examples 15/16/17)
+        run: ./mill e2e.testForked '*Js*'
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results-scala-js
           path: out/e2e/testForked.dest/
           if-no-files-found: ignore
 

@@ -4,6 +4,8 @@ import mill.*
 import mill.api.ModuleRef
 import mill.scalalib.*
 import mill.javalib.*
+import mill.scalajslib.*
+import mill.scalajslib.api.*
 import coursier.maven.MavenRepository
 
 private val NightliesRepo = MavenRepository(
@@ -16,7 +18,7 @@ object nightliesJvmWorker extends JvmWorkerModule:
   }
 
 val ScalaVersion = "3.10.0-RC1-bin-20260607-dec42ae-NIGHTLY"
-val Dapr4sVersion = "0.19.0"
+val Dapr4sVersion = "0.20.1"
 
 trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
@@ -118,6 +120,80 @@ object `14-orders-shell` extends ShellModule:
   override def moduleDeps = Seq(`14-orders`)
 object `14-pricing-shell` extends ShellModule:
   override def moduleDeps = Seq(`14-pricing`)
+
+// ── Scala.js examples (15/16/17) ────────────────────────────────────────────────
+// Re-implementations of the real-world case studies on Scala.js, validating the
+// published dapr4s_sjs1_3 artifact end to end (consumer resolves it like any Maven
+// dependency; the ScalablyTyped facades are embedded in the jar). They link with the
+// experimental WebAssembly backend (JSPI suspends the Wasm stack on every Dapr call,
+// keeping the public API synchronous/direct-style) and run on Node 25 — see e2e/.
+//
+//   15-* = 12 (Grafana-style scan pipeline)   16-* = 13 (ZEISS-style saga)
+//   17-* = 14 (telemetry orders + pricing)
+//
+// The pure `App.scala` of each service is shared verbatim with its JVM twin (the dapr4s
+// public API is identical across platforms); only the shell's `js.async` entry point and
+// env-driven config differ.
+val ScalaJSVersion = "1.21.0"
+
+trait JsBaseModule extends BaseModule with ScalaJSModule:
+  def scalaJSVersion = ScalaJSVersion
+  override def scalaJSExperimentalUseWebAssembly = true
+  override def moduleKind = ModuleKind.ESModule
+  override def moduleSplitStyle = ModuleSplitStyle.FewestModules
+  override def esFeatures = super.esFeatures().withESVersion(ESVersion.ES2017)
+
+trait Dapr4sJsModule extends JsBaseModule:
+  override def scalacOptions = Seq("-experimental")
+  override def mvnDeps = Seq(
+    mvn"com.github.sideeffffect::dapr4s::$Dapr4sVersion",
+  )
+
+// Pure (capture-checked) module — the JS twin of PureModule.
+trait JsPureModule extends Dapr4sJsModule:
+  override def scalacOptions = super.scalacOptions() ++ Seq(
+    "-language:experimental.safe",
+  )
+
+// Impure shell — the JS twin of ShellModule (upickle codecs + @main entry). No assembly
+// rules: on Scala.js the linked Wasm bundle (fastLinkJS) is the runnable artifact.
+trait JsShellModule extends Dapr4sJsModule:
+  override def mvnDeps = super.mvnDeps() ++ Seq(
+    mvn"com.lihaoyi::upickle::3.3.1",
+  )
+
+// ── 15 · Grafana-style scan pipeline (Scala.js) ─────────────────────────────────
+object `15-scan-gateway` extends JsPureModule
+object `15-scan-worker` extends JsPureModule
+object `15-scan-results` extends JsPureModule
+object `15-scan-gateway-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`15-scan-gateway`)
+object `15-scan-worker-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`15-scan-worker`)
+object `15-scan-results-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`15-scan-results`)
+
+// ── 16 · ZEISS-style order fulfillment saga (Scala.js) ──────────────────────────
+object `16-order-service` extends JsPureModule
+object `16-inventory-service` extends JsPureModule
+object `16-payment-service` extends JsPureModule
+object `16-shipping-service` extends JsPureModule
+object `16-order-service-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`16-order-service`)
+object `16-inventory-service-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`16-inventory-service`)
+object `16-payment-service-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`16-payment-service`)
+object `16-shipping-service-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`16-shipping-service`)
+
+// ── 17 · Observability / telemetry (Scala.js) ───────────────────────────────────
+object `17-orders` extends JsPureModule
+object `17-pricing` extends JsPureModule
+object `17-orders-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`17-orders`)
+object `17-pricing-shell` extends JsShellModule:
+  override def moduleDeps = Seq(`17-pricing`)
 
 // ── Slides (Marp + Mermaid -> PDF) ──────────────────────────────────────────────
 // Marp cannot render Mermaid natively, so this task pre-renders every ```mermaid
