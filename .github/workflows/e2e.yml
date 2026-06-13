@@ -209,14 +209,12 @@ jobs:
         run: npm ci
         working-directory: e2e/js
 
-      # Link each example service to a Wasm ES-module bundle (out/<shell>/fastLinkJS.dest).
+      # Link every Scala.js module to a Wasm ES-module bundle (out/<shell>/fastLinkJS.dest).
+      # The `__.fastLinkJS` wildcard runs the task on all JS modules in one resolution — do NOT
+      # list them as `./mill a.fastLinkJS b.fastLinkJS …`: Mill parses the trailing tokens as
+      # ARGUMENTS to the first task, so only the first bundle would be linked.
       - name: Link Scala.js example bundles (Wasm)
-        run: >-
-          ./mill
-          15-scan-gateway-shell.fastLinkJS 15-scan-worker-shell.fastLinkJS 15-scan-results-shell.fastLinkJS
-          16-order-service-shell.fastLinkJS 16-inventory-service-shell.fastLinkJS
-          16-payment-service-shell.fastLinkJS 16-shipping-service-shell.fastLinkJS
-          17-orders-shell.fastLinkJS 17-pricing-shell.fastLinkJS
+        run: ./mill __.fastLinkJS
 
       # The `*Js*` glob selects exactly the three Scala.js suites (Example15/16/17…JsTest).
       - name: Run Scala.js E2E tests (examples 15/16/17)
