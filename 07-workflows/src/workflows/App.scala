@@ -143,19 +143,18 @@ def processOrder(
 )(using DaprCapability, JsonCodec[OrderRequest], JsonCodec[OrderResult]): ProcessOrderResult =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    val wf = WorkflowCapability.instance(id)
-    val snapshot = wf.waitForCompletion(timeout)
+    val snapshot = id.waitForCompletion(timeout)
     snapshot match
       case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
       case Some(snap) =>
         val result = snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
-        // Completed instances linger in the state store; drop this one.
-        wf.purge()
+        // Completed instances linger in the state store; drop this one fluently.
+        id.purge()
         ProcessOrderResult(order.orderId, timedOut = false, result = result)
 
-// Walks the full instance lifecycle through a WorkflowCapability.Instance bound to
-// the started instance — start → getStatus → suspend → resume → raiseEvent →
-// waitForCompletion → purge — each reading as a method on `wf` rather than
+// Walks the full instance lifecycle through the fluent WorkflowInstanceId
+// extension methods — start → getStatus → suspend → resume → raiseEvent →
+// waitForCompletion → purge — each reading as a method on `id` rather than
 // `WorkflowCapability.op(id, ...)`.
 def runApproval(
     order: OrderRequest,
@@ -170,33 +169,31 @@ def runApproval(
 ): ApprovalOutcome =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    val wf = WorkflowCapability.instance(id)
 
     // The workflow is parked on the approval gate; suspend then resume it to show
     // the operations round-trip, and capture the live status in between.
-    wf.suspend()
-    val pausedStatus = wf.getStatus().map(_.status)
-    wf.resume()
+    id.suspend()
+    val pausedStatus = id.getStatus.map(_.status)
+    id.resume()
 
     // Deliver the event the workflow is blocked on, then await and clean up.
-    wf.raiseEvent(ApprovalEvent, approve)
-    val result = wf.waitForCompletion(timeout).flatMap(_.serializedOutput).flatMap(_.decode[OrderResult].toOption)
-    wf.purge()
+    id.raiseEvent(ApprovalEvent, approve)
+    val result = id.waitForCompletion(timeout).flatMap(_.serializedOutput).flatMap(_.decode[OrderResult].toOption)
+    id.purge()
 
     ApprovalOutcome(order.orderId, pausedStatus, result)
 
 // Demonstrates the abort path: terminate an instance that is still waiting for
-// approval, observe its status, then purge it — all on the bound `wf`.
+// approval, observe its status, then purge it — all fluently on `id`.
 def cancelApproval(
     order: OrderRequest,
     name: WorkflowName,
 )(using DaprCapability, JsonCodec[OrderRequest]): Option[WorkflowStatus] =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    val wf = WorkflowCapability.instance(id)
-    wf.terminate()
-    val status = wf.getStatus().map(_.status)
-    wf.purge()
+    id.terminate()
+    val status = id.getStatus.map(_.status)
+    id.purge()
     status
 
 object DriverApp:

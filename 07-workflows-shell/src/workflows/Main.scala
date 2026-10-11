@@ -58,10 +58,10 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
         println(s"\nOrder ${r.orderId}: $msg")
   println("\n[workflow-driver] done.")
 
-// Drives ApprovalOrderWorkflow through the WorkflowCapability.Instance lifecycle
+// Drives ApprovalOrderWorkflow through the fluent WorkflowInstanceId lifecycle
 // operations: approve, reject, and cancel-before-approval paths.
 @main def workflowLifecycle(): Unit =
-  println("=== 07 workflows: instance lifecycle (WorkflowCapability.Instance ops) ===\n")
+  println("=== 07 workflows: instance lifecycle (fluent WorkflowInstanceId ops) ===\n")
   val name = WorkflowName("ApprovalOrderWorkflow")
   Dapr(daprConfigFromEnv(defaultAppPort = 8087)).run:
     val approved = runApproval(

@@ -452,5 +452,10 @@ also renders the deck (`.github/workflows/e2e.yml`, job `slides`).
   Configuration, Jobs, Workflow have ReadOnly tiers). `DaprCapability.invoke`/`workflow`/`jobs`
   give the universal capability. Each family lives in its own package — import it alongside the
   root: `import dapr4s.*` + `import dapr4s.state.*` (`.invoke`, `.publish`, `.actor`, `.workflow`, …).
+- Handle sugar: `WorkflowInstanceId` and (JVM) `JobName` carry tier-aware extension methods —
+  `id.getStatus` / `id.waitForCompletion(t)` need only `WorkflowCapability.ReadOnly`,
+  `id.suspend()`/`resume()`/`terminate()`/`purge()`/`raiseEvent(…)` need `WorkflowCapability`;
+  `name.get` needs `JobsCapability.ReadOnly`, `name.schedule(…)`/`scheduleOnce(…)`/`delete()` need
+  `JobsCapability`. Prefer them where they read better (examples 07, 13/16).
 - `JsonCodec[T]` instances are derived in shells (macro expansion is impure) and passed into
   pure functions as `using` parameters.
