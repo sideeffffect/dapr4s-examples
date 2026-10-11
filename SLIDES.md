@@ -353,11 +353,20 @@ comment into a **compile error**.
 Every dapr4s capability extends `scala.caps.ExclusiveCapability`:
 
 ```scala
-trait StateCapability extends scala.caps.ExclusiveCapability:
-  def save[T](key: StateStoreKey, value: T)(using JsonCodec[T]): Unit
-  def get[T](key: StateStoreKey)(using JsonCodec[T]): Option[T]
+trait StateCapability extends StateCapability.ReadOnly:   // universal: any store
+  def save[T: JsonCodec](storeName: StateStoreName, key: StateStoreKey, value: T): Unit
   ...
+object StateCapability:
+  trait ReadOnly extends scala.caps.ExclusiveCapability:  // read-only tier
+    def get[T: JsonCodec](storeName: StateStoreName, key: StateStoreKey): Option[T]
+    ...
+  trait Instance extends Instance.ReadOnly:               // bound to ONE store
+    def save[T: JsonCodec](key: StateStoreKey, value: T): Unit
+    ...
 ```
+
+Each building block comes in tiers: the universal `XCapability`, narrowed by
+`.instance(name)` to `XCapability.Instance`, plus `ReadOnly` tiers where reads exist.
 
 **Exclusive** means: no aliasing, no sharing across threads, single owner.
 The compiler will reject capturing it in a lambda handed to another thread —
@@ -514,12 +523,12 @@ for every sub-capability — and it *cannot outlive the run block*:
 
 ```scala
 trait DaprCapability extends scala.caps.ExclusiveCapability:
-  def state(storeName: StateStoreName): StateCapability^{this}
-  def publish(pubsubName: PubSubName): PublishCapability^{this}
+  def state: StateCapability^{this}        // narrow: .instance(storeName)
+  def publish: PublishCapability^{this}    // narrow: .instance(pubsubName)
   def invoke: InvokeCapability^{this}
-  def secrets(storeName: SecretStoreName): SecretsCapability^{this}
-  def lock(storeName: LockStoreName): LockCapability^{this}
-  def actor(t: ActorType, id: ActorId): ActorCapability^{this}
+  def secrets: SecretsCapability^{this}
+  def lock: LockCapability^{this}
+  def actor: ActorCapability^{this}        // narrow: .forType(t).instance(id)
   def workflow: WorkflowCapability^{this}
 ```
 
@@ -579,15 +588,15 @@ and threads the capability implicitly via a context function (`?=>`):
 object HelloStateApp:                              // the pure entry point
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
     DaprCapability.state(StateStoreName("statestore")):
-      StateCapability.save(key, Note("Hello!", 1)) // capability is ambient
-      StateCapability.get[Note](key)
-    // ← StateCapability is GONE here. Touching it is a compile error.
+      StateCapability.Instance.save(key, Note("Hello!", 1)) // capability is ambient
+      StateCapability.Instance.get[Note](key)
+    // ← StateCapability.Instance is GONE here. Touching it is a compile error.
 ```
 
 ```scala
-def state(store: StateStoreName)[T](body: StateCapability ?=> T)
+def state(store: StateStoreName)[T](body: StateCapability.Instance ?=> T)
                               (using cap: DaprCapability): T =
-  body(using cap.state(store))
+  body(using cap.state.instance(store))
 ```
 
 Open a scope → use the capability → it's reclaimed at the brace. Guaranteed.
@@ -676,13 +685,13 @@ object HelloStateApp:
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
     DaprCapability.state(StateStoreName("statestore")):
       val key = StateStoreKey("hello-note")
-      StateCapability.save(key, Note("Hello from dapr4s!", 1))
-      val saved = StateCapability.get[Note](key)
+      StateCapability.Instance.save(key, Note("Hello from dapr4s!", 1))
+      val saved = StateCapability.Instance.get[Note](key)
 
-      val entry = StateCapability.getWithETag[Note](key)       // optimistic
+      val entry = StateCapability.Instance.getWithETag[Note](key)       // optimistic
       val etagConflict = (entry.value, entry.etag) match
         case (Some(n), Some(etag)) =>
-          StateCapability.saveWithETag(key, n.copy(text = "Updated!"), etag)
+          StateCapability.Instance.saveWithETag(key, n.copy(text = "Updated!"), etag)
         case _ => None
       ...
 ```
@@ -695,12 +704,12 @@ one capability scope. The whole function is `safe`-compiled: **no I/O leaks.**
 ## 1 · Hello State — transactions & the boundary
 
 ```scala
-    StateCapability.transaction(Seq(
+    StateCapability.Instance.transaction(Seq(
       StateOp.UpsertOp[Note](StateStoreKey("note-a"), Note("A", 1)),
       StateOp.UpsertOp[Note](StateStoreKey("note-b"), Note("B", 1)),
       StateOp.DeleteOp(key),
     ))
-    val bulk = StateCapability.getBulk[Note](Seq(StateStoreKey("note-a"), ...))
+    val bulk = StateCapability.Instance.getBulk[Note](Seq(StateStoreKey("note-a"), ...))
     HelloStateResult(saved, etagConflict, afterUpdate, ...)
 ```
 
@@ -721,13 +730,13 @@ Dapr(daprConfigFromEnv()).run:
 ```scala
 def readSecrets()(using DaprCapability): (Option[SecretValue], Seq[String]) =
   DaprCapability.secrets(SecretStoreName("secretstore")):
-    val apiKey  = SecretsCapability.get(SecretKey("MY_API_KEY"))
-    val allKeys = SecretsCapability.getBulk().keys.map(_.value).toSeq.sorted
+    val apiKey  = SecretsCapability.Instance.get(SecretKey("MY_API_KEY"))
+    val allKeys = SecretsCapability.Instance.getBulk().keys.map(_.value).toSeq.sorted
     (apiKey, allKeys)
 
 def readConfig()(using DaprCapability): Map[ConfigurationKey, ConfigurationItem] =
   DaprCapability.configuration(ConfigurationStoreName("configstore")):
-    ConfigurationCapability.get(configKeys)
+    ConfigurationCapability.Instance.get(configKeys)
 ```
 
 Two independent scopes from the same root. **Live config subscription**
@@ -739,8 +748,8 @@ Two independent scopes from the same root. **Live config subscription**
 
 ```scala
 def onMessage(event: CloudEvent[Message])
-             (using PublishCapability, JsonCodec[Message]): SubscriptionResult =
-  PublishCapability.publish(Topic("hello-replies"), event.data.copy(from = "subscriber"))
+             (using PublishCapability.Instance, JsonCodec[Message]): SubscriptionResult =
+  PublishCapability.Instance.publish(Topic("hello-replies"), event.data.copy(from = "subscriber"))
   SubscriptionResult.Success
 
 object SubscriberApp:
@@ -751,7 +760,7 @@ object SubscriberApp:
       ))
 ```
 
-The handler **captures** `PublishCapability`; the compiler tracks that capture
+The handler **captures** `PublishCapability.Instance`; the compiler tracks that capture
 all the way to `Subscription`. Messages arrive as typed **`CloudEvent[Message]`** —
 no manual envelope parsing.
 
@@ -760,13 +769,13 @@ no manual envelope parsing.
 ## 4 · Service Invocation — typed routes (callee)
 
 ```scala
-def greet(req: GreetRequest)(using StateCapability, JsonCodec[ServiceStats]): GreetResponse =
+def greet(req: GreetRequest)(using StateCapability.Instance, JsonCodec[ServiceStats]): GreetResponse =
   val greeting = req.language match
     case "es" => s"¡Hola, ${req.name}!"
     case "fr" => s"Bonjour, ${req.name}!"
     case _    => s"Hello, ${req.name}!"
-  val current = StateCapability.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
-  StateCapability.save(StatsKey, current.copy(count = current.count + 1))
+  val current = StateCapability.Instance.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
+  StateCapability.Instance.save(StatsKey, current.copy(count = current.count + 1))
   GreetResponse(greeting, from = "greeting-service")
 
 object CalleeApp:
@@ -813,11 +822,11 @@ object DistributedLockApp:
         val resource = LockResourceId("my-resource")
         for i <- 1 to N do
           val owner = LockOwner(s"worker-$i")
-          if LockCapability.tryLock(resource, owner, expiry = lockExpiry) then
+          if LockCapability.Instance.tryLock(resource, owner, expiry = lockExpiry) then
             try
-              val v = StateCapability.get[Int](counter).getOrElse(0)
-              StateCapability.save(counter, v + 1)
-            finally LockCapability.unlock(resource, owner)
+              val v = StateCapability.Instance.get[Int](counter).getOrElse(0)
+              StateCapability.Instance.save(counter, v + 1)
+            finally LockCapability.Instance.unlock(resource, owner)
 ```
 
 `LockCapability` is **exclusive** — the compiler forbids handing it
@@ -830,13 +839,13 @@ to another thread's closure. Lock/unlock pairing is structural (`try/finally`).
 
 ```scala
       val secondAcquire =
-        if LockCapability.tryLock(resource, ownerA, expiry = lockExpiry) then
-          val second = LockCapability.tryLock(resource, ownerB, expiry = shortExpiry)
-          LockCapability.unlock(resource, ownerA)
+        if LockCapability.Instance.tryLock(resource, ownerA, expiry = lockExpiry) then
+          val second = LockCapability.Instance.tryLock(resource, ownerB, expiry = shortExpiry)
+          LockCapability.Instance.unlock(resource, ownerA)
           second          // false — B can't acquire while A holds it
         else false
 
-      val afterRelease = LockCapability.tryLock(resource, ownerB, expiry = lockExpiry)
+      val afterRelease = LockCapability.Instance.tryLock(resource, ownerB, expiry = lockExpiry)
       // true — now that A released, B succeeds
 ```
 
@@ -943,7 +952,7 @@ def processOrder(order: OrderRequest, name: WorkflowName, timeout: FiniteDuratio
                 (using DaprCapability, ...): ProcessOrderResult =
   DaprCapability.workflow:
     val id = WorkflowCapability.start(name, order)
-    id.waitForCompletion(timeout) match
+    WorkflowCapability.waitForCompletion(id, timeout) match
       case None       => ProcessOrderResult(order.orderId, timedOut = true, None)
       case Some(snap) => ... snap.serializedOutput.flatMap(_.decode[OrderResult].toOption)
 ```
@@ -960,12 +969,12 @@ inside `run` — that's what keeps replay deterministic.
 object CryptographyDemoApp:
   def apply()(using DaprCapability): CryptoResult =
     DaprCapability.crypto(CryptoComponentName("localstorage")):
-      val cipher    = CryptoCapability.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
-      val decrypted = CryptoCapability.decryptString(cipher)        // key ref rides in the ciphertext
+      val cipher    = CryptoCapability.Instance.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
+      val decrypted = CryptoCapability.Instance.decryptString(cipher)        // key ref rides in the ciphertext
 
       val data       = Charsets.encodeString("payload-bytes", Charsets.Utf8)
-      val cipherBytes = CryptoCapability.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
-      CryptoResult(plaintext, cipher.size, decrypted, CryptoCapability.decrypt(cipherBytes) == data)
+      val cipherBytes = CryptoCapability.Instance.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
+      CryptoResult(plaintext, cipher.size, decrypted, CryptoCapability.Instance.decrypt(cipherBytes) == data)
 ```
 
 `CryptoCapability` is **exclusive** to the `crypto(...)` scope. Payloads are
@@ -980,8 +989,8 @@ ciphertext, so it needs only the bytes.
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
   JobsCapability.scheduleOnce(DemoJob, payload, Instant.now().plusSeconds(2)); payload
 
-def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit =
-  StateCapability.save(resultKey, payload)              // the trigger lands here
+def onJobFired(payload: String)(using StateCapability.Instance, JsonCodec[String]): Unit =
+  StateCapability.Instance.save(resultKey, payload)              // the trigger lands here
 
 DaprCapability.state(StateStore): DaprCapability.jobs:
   DaprApp(
@@ -1001,7 +1010,7 @@ typed route. Both lambdas capture their capability from the enclosing scope.
 object ConversationDemoApp:
   def apply()(using DaprCapability): ConversationDemoResult =
     DaprCapability.conversation(ConversationComponentName("echo")):
-      val resp = ConversationCapability.converse(Seq(
+      val resp = ConversationCapability.Instance.converse(Seq(
         ConversationMessage.system("be terse"),
         ConversationMessage.user("hello world"),       // roles, tools, usage — all typed
       ))
@@ -1061,8 +1070,8 @@ so they're plain `val`s (not `given`s) — no ambiguous implicit.
 ## 11 · Bindings — the code
 
 ```scala
-val ordersQueue     = cap.bindings(OrdersQueue)      // Kafka — bidirectional
-val jsonPlaceholder = cap.bindings(JsonPlaceholder)  // HTTP  — output (jsonplaceholder.typicode.com)
+val ordersQueue     = cap.bindings.instance(OrdersQueue) // Kafka — bidirectional
+val jsonPlaceholder = cap.bindings.instance(JsonPlaceholder) // HTTP  — output (jsonplaceholder.typicode.com)
 
 DaprCapability.state(StateStore):
   DaprApp(
@@ -1074,7 +1083,7 @@ DaprCapability.state(StateStore):
     bindings = List(                                                     // INPUT ← Kafka
       BindingRoute[PostRef](OrdersQueue): ref =>
         jsonPlaceholder.invoke(BindingOperation("get"), "", pathMeta(s"/posts/${ref.postId}"))[Post]  // OUTPUT → HTTP
-          .foreach(post => StateCapability.save(postKey(post.id), post)),
+          .foreach(post => StateCapability.Instance.save(postKey(post.id), post)),
     ),
   )
 ```
@@ -1131,7 +1140,7 @@ Both ship as **multiple modules** in `dapr4s-examples` — one per microservice.
 ## A note before we start: deriving the wiring
 
 The eleven examples **hand-wrote** the reified model — explicit `InvokeRoute[...]`
-lists, `PublishCapability.publish` calls, `extends WorkflowActivity`. The case studies that
+lists, `PublishCapability.Instance.publish` calls, `extends WorkflowActivity`. The case studies that
 follow (12–14) use dapr4s's **derivation** instead: describe a trait, object, or class, and
 `dapr4s.derivation` generates the facade. *Same types, same capture-checking, less
 boilerplate.* (Distinct from JSON-codec derivation — this derives the *routes/clients*.)
@@ -1173,8 +1182,8 @@ is all you need.
 
 ```scala
 trait Counter:                                   // State / ActorState: getter + setter
-  def count(using StateCapability, JsonCodec[Int]): Option[Int]
-  def count_=(v: Int)(using StateCapability, JsonCodec[Int]): Unit
+  def count(using StateCapability.Instance, JsonCodec[Int]): Option[Int]
+  def count_=(v: Int)(using StateCapability.Instance, JsonCodec[Int]): Unit
 
 val routes = InvokeRoutes.derive[GatewayRoutes.type]   // server side: an object of methods → routes
 ```

@@ -1,6 +1,7 @@
 package paymentservice
 
 import dapr4s.*
+import dapr4s.invoke.*
 import dapr4s.derivation.*
 
 // ── 09 · ZEISS-style order fulfillment — payment service ──────────────────────

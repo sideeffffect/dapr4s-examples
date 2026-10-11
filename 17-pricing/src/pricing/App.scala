@@ -1,6 +1,7 @@
 package pricing
 
 import dapr4s.*
+import dapr4s.invoke.*
 import dapr4s.derivation.*
 
 // ── 14 · Observability — pricing service (service-invocation callee) ───────────

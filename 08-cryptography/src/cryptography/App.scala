@@ -1,10 +1,11 @@
 package cryptography
 
 import dapr4s.*
+import dapr4s.crypto.*
 import scala.collection.immutable.ArraySeq
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
-// CryptoCapability is an ExclusiveCapability acquired by DaprCapability.crypto(...).
+// CryptoCapability.Instance is an ExclusiveCapability acquired by DaprCapability.crypto(...).
 // It wraps the data key for `plaintext` with the named component key; decrypt reads
 // the key reference embedded in the ciphertext, so it needs only the ciphertext.
 // Payloads are immutable ArraySeq[Byte]; the *String helpers handle UTF-8 text.
@@ -25,11 +26,11 @@ object CryptographyDemoApp:
   def apply()(using DaprCapability): CryptoResult =
     DaprCapability.crypto(CryptoComponent):
       val plaintext = "the quick brown fox"
-      val cipher = CryptoCapability.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
-      val decrypted = CryptoCapability.decryptString(cipher) // key ref rides in the ciphertext
+      val cipher = CryptoCapability.Instance.encryptString(RsaKey, plaintext, KeyWrapAlgorithm.Rsa)
+      val decrypted = CryptoCapability.Instance.decryptString(cipher) // key ref rides in the ciphertext
 
       val data = Charsets.encodeString("payload-bytes", Charsets.Utf8)
-      val cipherBytes = CryptoCapability.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
-      val bytesRoundTrip = CryptoCapability.decrypt(cipherBytes) == data
+      val cipherBytes = CryptoCapability.Instance.encrypt(RsaKey, data, KeyWrapAlgorithm.Rsa)
+      val bytesRoundTrip = CryptoCapability.Instance.decrypt(cipherBytes) == data
 
       CryptoResult(plaintext, cipher.size, decrypted, bytesRoundTrip)

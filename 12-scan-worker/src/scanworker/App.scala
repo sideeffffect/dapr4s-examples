@@ -1,6 +1,8 @@
 package scanworker
 
 import dapr4s.*
+import dapr4s.publish.*
+import dapr4s.state.*
 import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — worker service ─────────────────────────
@@ -40,31 +42,31 @@ def scan(req: ScanRequest): ScanResult =
 
 // Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def scanCompleted(r: ScanResult)(using PublishCapability, JsonCodec[ScanResult]): Unit
+  def scanCompleted(r: ScanResult)(using PublishCapability.Instance, JsonCodec[ScanResult]): Unit
 lazy val ScanTopics: ScanTopics = Publish.derive[ScanTopics]
 
 // Derived subscription: method name (camelCase, verbatim) → Topic, @deadLetter → dead-letter topic.
-// The handler body keeps the explicit StateCapability calls — idempotency/retry logic over *dynamic*
+// The handler body keeps the explicit StateCapability.Instance calls — idempotency/retry logic over *dynamic*
 // keys (seen-/attempt-<scanId>) has no derived form; only the wiring is derived.
 object WorkerRoutes:
   @deadLetter("scanDeadLetter")
   def scanRequested(event: CloudEvent[ScanRequest])(using
-      StateCapability,
-      PublishCapability,
+      StateCapability.Instance,
+      PublishCapability.Instance,
       JsonCodec[SeenMarker],
       JsonCodec[Int],
       JsonCodec[ScanResult],
   ): SubscriptionResult =
     val req = event.data
-    if StateCapability.get[SeenMarker](seenKey(req.scanId)).isDefined then SubscriptionResult.Drop
+    if StateCapability.Instance.get[SeenMarker](seenKey(req.scanId)).isDefined then SubscriptionResult.Drop
     else if req.source == "poison" then SubscriptionResult.Retry
     else
-      val attempts = StateCapability.get[Int](attemptKey(req.scanId)).getOrElse(0)
-      StateCapability.save(attemptKey(req.scanId), attempts + 1)
+      val attempts = StateCapability.Instance.get[Int](attemptKey(req.scanId)).getOrElse(0)
+      StateCapability.Instance.save(attemptKey(req.scanId), attempts + 1)
       if req.source == "flaky" && attempts == 0 then SubscriptionResult.Retry
       else
         ScanTopics.scanCompleted(scan(req))
-        StateCapability.save(seenKey(req.scanId), SeenMarker(req.scanId))
+        StateCapability.Instance.save(seenKey(req.scanId), SeenMarker(req.scanId))
         SubscriptionResult.Success
 
 object WorkerApp:

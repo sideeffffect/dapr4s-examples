@@ -1,6 +1,8 @@
 package orderservice
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.workflow.*
 import dapr4s.derivation.*
 import scala.concurrent.duration.*
 
@@ -93,7 +95,7 @@ def processOrder(order: OrderRequest, timeout: FiniteDuration)(using
     JsonCodec[OrderResult],
 ): ProcessOrderResult =
   val id = OrderWorkflows.OrderProcessingWorkflow(order)
-  id.waitForCompletion(timeout) match
+  WorkflowCapability.waitForCompletion(id, timeout) match
     case None       => ProcessOrderResult(order.orderId, timedOut = true, result = None)
     case Some(snap) =>
       ProcessOrderResult(

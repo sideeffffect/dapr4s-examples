@@ -1,11 +1,14 @@
 package bindings
 
 import dapr4s.*
+import dapr4s.bindings.*
+import dapr4s.invoke.*
+import dapr4s.state.*
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // Bindings has two directions, both shown here against two different components:
 //
-//   • OUTPUT binding (app → external) — BindingsCapability.invoke / invokeOneWay.
+//   • OUTPUT binding (app → external) — BindingsCapability.Instance.invoke / invokeOneWay.
 //     We talk to TWO external systems:
 //       - `jsonplaceholder`: an HTTP binding pointed at https://jsonplaceholder.typicode.com.
 //         `invoke(get,  path=/posts/N)`  fetches a Post; `invoke(post, /posts)` creates one.
@@ -24,17 +27,17 @@ import dapr4s.*
 //                                        ▼
 //   BindingRoute(orders-queue) ◀── sidecar POST            [INPUT from Kafka]
 //        └─▶ jsonplaceholder.invoke(get /posts/N)[Post]    [OUTPUT to HTTP API]
-//        └─▶ StateCapability.save(post-N, fetched)
+//        └─▶ StateCapability.Instance.save(post-N, fetched)
 //
 //   InvokeRoute /create  ──▶ jsonplaceholder.invoke(post /posts)[Post]  [OUTPUT to HTTP API]
 //
 // WHY two explicit `val`s instead of the `DaprCapability.bindings(name){…}` transformer:
-// both bindings are the SAME type (`BindingsCapability`), so they cannot both sit in
+// both bindings are the SAME type (`BindingsCapability.Instance`), so they cannot both sit in
 // implicit scope as `given`s (that would be an ambiguous implicit). We use the direct
-// factory style — `cap.bindings(name)` returns a `BindingsCapability` we name explicitly —
+// factory style — `cap.bindings.instance(name)` returns a `BindingsCapability.Instance` we name explicitly —
 // and call `.invoke` on each by name. The route lambdas capture these values; the
 // @assumeSafe AnyRef-erasure inside InvokeRoute/BindingRoute drops the capture set.
-// StateCapability, of which there is only one, stays an implicit via the state transformer.
+// StateCapability.Instance, of which there is only one, stays an implicit via the state transformer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 val StateStore = StateStoreName("statestore")
@@ -63,8 +66,8 @@ object BindingsExampleApp:
       JsonCodec[String],
   ): DaprApp =
     val cap = summon[DaprCapability]
-    val ordersQueue = cap.bindings(OrdersQueue) // produce side of the Kafka binding
-    val jsonPlaceholder = cap.bindings(JsonPlaceholder) // the HTTP API binding
+    val ordersQueue = cap.bindings.instance(OrdersQueue) // produce side of the Kafka binding
+    val jsonPlaceholder = cap.bindings.instance(JsonPlaceholder) // the HTTP API binding
 
     DaprCapability.state(StateStore):
       DaprApp(
@@ -86,6 +89,6 @@ object BindingsExampleApp:
           BindingRoute[PostRef](OrdersQueue): ref =>
             jsonPlaceholder
               .invoke(BindingOperation("get"), "", pathMeta(s"/posts/${ref.postId}"))[Post]
-              .foreach(post => StateCapability.save(postKey(post.id), post)),
+              .foreach(post => StateCapability.Instance.save(postKey(post.id), post)),
         ),
       )

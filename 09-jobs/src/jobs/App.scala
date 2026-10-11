@@ -1,6 +1,9 @@
 package jobs
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.jobs.*
+import dapr4s.state.*
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
 // Jobs has two halves, both shown here:
@@ -10,7 +13,7 @@ import dapr4s.*
 //     /job/<name>, dispatched to the matching JobRoute.  The handler persists the
 //     delivered payload to the state store so the outcome is observable.
 //
-// Both JobsCapability and StateCapability are ExclusiveCapabilities introduced by
+// Both JobsCapability and StateCapability.Instance are ExclusiveCapabilities introduced by
 // the enclosing DaprCapability scopes; the route lambdas capture them, and the
 // @assumeSafe boundaries inside InvokeRoute/JobRoute erase the capture set.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,8 +29,8 @@ def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): Stri
   payload
 
 // Invoked by the sidecar when DemoJob fires; records the payload for inspection.
-def onJobFired(payload: String)(using StateCapability, JsonCodec[String]): Unit =
-  StateCapability.save(resultKey, payload)
+def onJobFired(payload: String)(using StateCapability.Instance, JsonCodec[String]): Unit =
+  StateCapability.Instance.save(resultKey, payload)
 
 object JobsServerApp:
   def apply()(using DaprCapability, JsonCodec[String]): DaprApp =

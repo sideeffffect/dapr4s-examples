@@ -18,8 +18,8 @@ dapr4s exposes each building block two ways, and the examples are deliberately p
 so each style is shown on its own:
 
 - **Primitive reified** — you hand-write the wiring: call capability methods directly
-  (`PublishCapability.publish`, `InvokeCapability.invoke`, `ActorCapability.invoke`,
-  `CryptoCapability.encryptString`, `JobsCapability.scheduleOnce`, `WorkflowContext.callActivity`)
+  (`PublishCapability.Instance.publish`, `InvokeCapability.invoke`, `ActorCapability.Instance.invoke`,
+  `CryptoCapability.Instance.encryptString`, `JobsCapability.scheduleOnce`, `WorkflowContext.callActivity`)
   and construct routes/subscriptions/activities by hand (`InvokeRoute[…]`, `Subscription[…]`,
   `ActorDefinition`, `JobRoute`, `extends WorkflowActivity`). This is the foundation.
 - **Derived** — you describe a trait/object/class of method signatures and let
@@ -41,7 +41,7 @@ so each style is shown on its own:
 >
 > Note: opening a capability *scope* (`Dapr(config).run`, `DaprCapability.state(store) { … }`,
 > `DaprCapability.publish(component) { … }`) and in-handler operations that have **no** derived
-> form (e.g. `StateCapability.get`/`save` over *dynamic* keys) are foundational and used by
+> form (e.g. `StateCapability.Instance.get`/`save` over *dynamic* keys) are foundational and used by
 > **both** styles — they are not "the primitive approach" being toggled here.
 
 ---
@@ -64,10 +64,10 @@ APIs, but without any safe-mode restrictions.
 
 ```scala
 Dapr(config).run:                                  // DaprCapability in scope
-  DaprCapability.state(StateStoreName("statestore")): // StateCapability^{cap} in scope
-    StateCapability.save(key, value)               // OK — inside the scope
+  DaprCapability.state(StateStoreName("statestore")): // StateCapability.Instance^{cap} in scope
+    StateCapability.Instance.save(key, value)      // OK — inside the scope
 
-// HERE: StateCapability is gone. Using it here is a compile error.
+// HERE: StateCapability.Instance is gone. Using it here is a compile error.
 ```
 
 The compiler rejects any attempt to assign, return, or otherwise smuggle a capability out
@@ -352,12 +352,12 @@ is locked to (see "Two API styles" above): examples 1–11 are **reified**, 12�
 |---|---|---|---|---|
 | 1 | `01-hello-state/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` | reified |
 | 2 | `02-secrets-config/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures | reified |
-| 3 | `03-hello-pubsub/` | Pub/sub publish + subscribe | `PublishCapability.publish` direct; handler captures the capability | reified |
+| 3 | `03-hello-pubsub/` | Pub/sub publish + subscribe | `PublishCapability.Instance.publish` direct; handler captures the capability | reified |
 | 4 | `04-service-invocation/` | HTTP service-to-service calls | `InvokeCapability.invoke` + typed `InvokeRoute` handlers | reified |
 | 5 | `05-distributed-lock/` | Distributed lock | Lock capability ensures try/unlock pairing | reified |
-| 6 | `06-actors/` | Virtual actors, timers, reminders | `ActorContext` per-invocation capability; `ActorCapability.invoke` client | reified |
+| 6 | `06-actors/` | Virtual actors, timers, reminders | `ActorContext` per-invocation capability; `ActorCapability.Instance.invoke` client | reified |
 | 7 | `07-workflows/` | Durable workflows, saga, compensation | `WorkflowContext` deterministic replay; `callActivity` returns `Task[O]` | reified |
-| 8 | `08-cryptography/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability.encryptString`/`encrypt` over immutable `ArraySeq[Byte]` | reified |
+| 8 | `08-cryptography/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability.Instance.encryptString`/`encrypt` over immutable `ArraySeq[Byte]` | reified |
 | 9 | `09-jobs/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability.scheduleOnce` (client) + `JobRoute` (trigger) | reified |
 | 10 | `10-conversation/` | LLM conversation (alpha1 + alpha2) | `ConversationCapability` against the `conversation.echo` component | reified |
 | 11 | `11-bindings/` | Output + input on one bidirectional connector | `BindingsCapability` invoke / invokeOneWay (output) + `BindingRoute` (input) | reified |
@@ -441,7 +441,16 @@ also renders the deck (`.github/workflows/e2e.yml`, job `slides`).
   no per-file feature import is needed or present.
 - Shell modules (`Dapr4sModule`) are compiled with `-experimental` only — impure code is fine.
 - `DaprCapability.state(store) { ... }` and similar companion-object scoping blocks open
-  capability scopes inside pure functions; raw `summon[StateCapability]` stored in a `val`
+  capability scopes inside pure functions; raw `summon[StateCapability.Instance]` stored in a `val`
   is never used.
+- Capability tiers (dapr4s capability hierarchy): `DaprCapability.x` is the universal
+  `XCapability` (methods take the store/component name); `.instance(name)` narrows it to
+  `XCapability.Instance`, which is what the name-taking transformers (`DaprCapability.state(store)`,
+  `publish`, `secrets`, `configuration`, `lock`, `crypto`, `bindings`, `actor`) put in scope —
+  so business code takes `using StateCapability.Instance` and calls `StateCapability.Instance.get(…)`.
+  Read-only code can ask for the narrower `StateCapability.Instance.ReadOnly` (State, Secrets,
+  Configuration, Jobs, Workflow have ReadOnly tiers). `DaprCapability.invoke`/`workflow`/`jobs`
+  give the universal capability. Each family lives in its own package — import it alongside the
+  root: `import dapr4s.*` + `import dapr4s.state.*` (`.invoke`, `.publish`, `.actor`, `.workflow`, …).
 - `JsonCodec[T]` instances are derived in shells (macro expansion is impure) and passed into
   pure functions as `using` parameters.

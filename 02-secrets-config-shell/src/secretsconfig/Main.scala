@@ -1,6 +1,7 @@
 package secretsconfig
 
 import dapr4s.*
+import dapr4s.configuration.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
 // Starts the Dapr runtime, calls the pure read functions, prints results, and
@@ -33,7 +34,7 @@ private def daprConfigFromEnv(): DaprConfig =
     println("\nSubscribing to live config changes for 'greeting'...")
     println("(Update the key via Redis CLI or `dapr publish` to see changes.)\n")
     DaprCapability.configuration(ConfigurationStoreName("configstore")):
-      val sub = ConfigurationCapability.subscribe(Seq(ConfigurationKey("greeting")), Map.empty): update =>
+      val sub = ConfigurationCapability.Instance.subscribe(Seq(ConfigurationKey("greeting")), Map.empty): update =>
         val changes = update.items.map((k, v) => s"${k.value}=${v.value}").mkString(", ")
         println(s"[config update] $changes")
       Thread.sleep(15_000)

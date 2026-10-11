@@ -1,9 +1,10 @@
 package conversation
 
 import dapr4s.*
+import dapr4s.conversation.*
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
-// ConversationCapability is an ExclusiveCapability acquired by
+// ConversationCapability.Instance is an ExclusiveCapability acquired by
 // DaprCapability.conversation(...).  The demo runs against the built-in
 // `conversation.echo` component, which echoes each prompt straight back — so the
 // "completions" are deterministic and need no real LLM provider.  `converse`
@@ -21,10 +22,10 @@ object ConversationDemoApp:
   def apply()(using DaprCapability): ConversationDemoResult =
     DaprCapability.conversation(EchoComponent):
       // A single-message exchange — the echo component reflects the prompt back.
-      val resp = ConversationCapability.converse(Seq(ConversationMessage.user("ping")))
+      val resp = ConversationCapability.Instance.converse(Seq(ConversationMessage.user("ping")))
 
       // The same API carries multi-message context with explicit roles.
-      val resp2 = ConversationCapability.converse(
+      val resp2 = ConversationCapability.Instance.converse(
         Seq(
           ConversationMessage.system("be terse"),
           ConversationMessage.user("hello world"),

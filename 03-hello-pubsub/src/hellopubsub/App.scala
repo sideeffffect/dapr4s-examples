@@ -1,6 +1,7 @@
 package hellopubsub
 
 import dapr4s.*
+import dapr4s.publish.*
 
 val PubSubComponent = PubSubName("pubsub")
 val MessageTopic = Topic("HelloTopic")
@@ -8,15 +9,15 @@ val MessageTopic = Topic("HelloTopic")
 case class Message(from: String, text: String, sequenceNo: Int)
 
 // ── Capture-checked pure module ───────────────────────────────────────────────
-// The subscription handler captures PublishCapability; the compiler tracks this
+// The subscription handler captures PublishCapability.Instance; the compiler tracks this
 // capture when the handler is passed to Subscription[Message].  The @assumeSafe
 // boundary inside Subscription.apply erases the capture set, so the returned
 // DaprApp is a plain value.  JsonCodec[Message] is passed from the shell.
 // ─────────────────────────────────────────────────────────────────────────────
 
-def onMessage(event: CloudEvent[Message])(using PublishCapability, JsonCodec[Message]): SubscriptionResult =
+def onMessage(event: CloudEvent[Message])(using PublishCapability.Instance, JsonCodec[Message]): SubscriptionResult =
   val msg = event.data
-  PublishCapability.publish(Topic("hello-replies"), msg.copy(from = "subscriber"))
+  PublishCapability.Instance.publish(Topic("hello-replies"), msg.copy(from = "subscriber"))
   SubscriptionResult.Success
 
 object SubscriberApp:
@@ -32,4 +33,7 @@ object PublisherApp:
   def apply()(using DaprCapability, JsonCodec[Message]): Unit =
     DaprCapability.publish(PubSubComponent):
       for i <- 1 to 5 do
-        PublishCapability.publish(MessageTopic, Message(from = "publisher", text = "hello world", sequenceNo = i))
+        PublishCapability.Instance.publish(
+          MessageTopic,
+          Message(from = "publisher", text = "hello world", sequenceNo = i),
+        )
