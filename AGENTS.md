@@ -19,7 +19,8 @@ so each style is shown on its own:
 
 - **Primitive reified** — you hand-write the wiring: call capability methods directly
   (`PublishCapability.Instance.publish`, `InvokeCapability.invoke`, `ActorCapability.Instance.invoke`,
-  `CryptoCapability.Instance.encryptString`, `JobsCapability.scheduleOnce`, `WorkflowContext.callActivity`)
+  `CryptoCapability.Instance.encryptString`, `DemoJob.scheduleOnce` (`JobName` sugar over `JobsCapability`),
+  `WorkflowContext.callActivity`)
   and construct routes/subscriptions/activities by hand (`InvokeRoute[…]`, `Subscription[…]`,
   `ActorDefinition`, `JobRoute`, `extends WorkflowActivity`). This is the foundation.
 - **Derived** — you describe a trait/object/class of method signatures and let
@@ -358,7 +359,7 @@ is locked to (see "Two API styles" above): examples 1–11 are **reified**, 12�
 | 6 | `06-actors/` | Virtual actors, timers, reminders | `ActorContext` per-invocation capability; `ActorCapability.Instance.invoke` client | reified |
 | 7 | `07-workflows/` | Durable workflows, saga, compensation | `WorkflowContext` deterministic replay; `callActivity` returns `Task[O]` | reified |
 | 8 | `08-cryptography/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability.Instance.encryptString`/`encrypt` over immutable `ArraySeq[Byte]` | reified |
-| 9 | `09-jobs/` | Schedule a job; sidecar fires it back to a `JobRoute` | `JobsCapability.scheduleOnce` (client) + `JobRoute` (trigger) | reified |
+| 9 | `09-jobs/` | Schedule a job; sidecar fires it back to a `JobRoute` | `DemoJob.scheduleOnce` (`JobName` sugar over `JobsCapability`, client) + `JobRoute` (trigger) | reified |
 | 10 | `10-conversation/` | LLM conversation (alpha1 + alpha2) | `ConversationCapability` against the `conversation.echo` component | reified |
 | 11 | `11-bindings/` | Output + input on one bidirectional connector | `BindingsCapability` invoke / invokeOneWay (output) + `BindingRoute` (input) | reified |
 | 12 | `12-scan-gateway/`, `12-scan-worker/`, `12-scan-results/` | Grafana-style fan-out pub/sub pipeline with a real dead-letter queue | Three services; derived publishers (`Publish.derive`), subscriptions, and routes; dead-letter topic counted in the dashboard | derived |
@@ -456,6 +457,6 @@ also renders the deck (`.github/workflows/e2e.yml`, job `slides`).
   `id.getStatus` / `id.waitForCompletion(t)` need only `WorkflowCapability.ReadOnly`,
   `id.suspend()`/`resume()`/`terminate()`/`purge()`/`raiseEvent(…)` need `WorkflowCapability`;
   `name.get` needs `JobsCapability.ReadOnly`, `name.schedule(…)`/`scheduleOnce(…)`/`delete()` need
-  `JobsCapability`. Prefer them where they read better (examples 07, 13/16).
+  `JobsCapability`. Prefer them where they read better (examples 07, 09, 13/16).
 - `JsonCodec[T]` instances are derived in shells (macro expansion is impure) and passed into
   pure functions as `using` parameters.

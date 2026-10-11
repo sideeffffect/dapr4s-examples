@@ -987,7 +987,7 @@ ciphertext, so it needs only the bytes.
 
 ```scala
 def scheduleDemo(payload: String)(using JobsCapability, JsonCodec[String]): String =
-  JobsCapability.scheduleOnce(DemoJob, payload, Instant.now().plusSeconds(2)); payload
+  DemoJob.scheduleOnce(payload, Instant.now().plusSeconds(2)); payload
 
 def onJobFired(payload: String)(using StateCapability.Instance, JsonCodec[String]): Unit =
   StateCapability.Instance.save(resultKey, payload)              // the trigger lands here
