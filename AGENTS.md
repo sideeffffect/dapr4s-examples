@@ -120,7 +120,8 @@ Source files live under `src/<package>/` within each module directory, e.g.:
 - **Dapr CLI** and runtime: https://docs.dapr.io/getting-started/install-dapr-cli/
 - **Redis** on `localhost:6379` — `docker run -d -p 6379:6379 redis:7`
 - **JVM ≥ 21** — `java -version`
-- **Mill 0.12.x** — `mill --version`
+- **Mill 1.3.x** — use the `./mill` launcher (it reads `.mill-version`). Mill >= 1.3.0 is required
+  for the Scala.js JSPI switch (see "Scala.js examples").
 - **dapr4s published locally** (run once from the dapr4s repo):
   ```
   cd ../scala-safe-dapr
@@ -191,7 +192,9 @@ dapr run --app-id pubsub-publisher \
 
 ### 04 — service-invocation
 
-Two processes: a callee (HTTP server with InvokeRoutes) and a caller (client).
+Two processes: a callee (HTTP server with InvokeRoutes) and a caller (client). The caller
+also calls a route the callee does not serve: `invokeHttp` returns the 404 as a value, the typed
+`invoke` throws `InvokeHttpException`.
 
 ```
 # Terminal 1 — callee
@@ -209,7 +212,7 @@ dapr run --app-id greeting-client \
 ### 05 — distributed-lock
 
 No server. Simulates sequential workers under a distributed lock and demonstrates
-double-acquire behaviour.
+double-acquire behaviour and an unlock by a non-owner (`UnlockStatus.LockBelongsToOthers`).
 
 ```
 dapr run --app-id distributed-lock \
@@ -354,8 +357,8 @@ is locked to (see "Two API styles" above): examples 1–11 are **reified**, 12�
 | 1 | `01-hello-state/` | State CRUD, ETag, transactions | `StateCapability` cannot outlive `DaprCapability.state { }` | reified |
 | 2 | `02-secrets-config/` | Secrets + live config subscription | Multiple capabilities simultaneously; subscribe callback captures | reified |
 | 3 | `03-hello-pubsub/` | Pub/sub publish + subscribe | `PublishCapability.Instance.publish` direct; handler captures the capability | reified |
-| 4 | `04-service-invocation/` | HTTP service-to-service calls | `InvokeCapability.invoke` + typed `InvokeRoute` handlers | reified |
-| 5 | `05-distributed-lock/` | Distributed lock | Lock capability ensures try/unlock pairing | reified |
+| 4 | `04-service-invocation/` | HTTP service-to-service calls | `InvokeCapability.invoke` + typed `InvokeRoute` handlers; `invokeHttp` (non-2xx as a value) vs `InvokeHttpException` | reified |
+| 5 | `05-distributed-lock/` | Distributed lock | Lock capability ensures try/unlock pairing; exhaustive `UnlockStatus` match (`LockBelongsToOthers`) | reified |
 | 6 | `06-actors/` | Virtual actors, timers, reminders | `ActorContext` per-invocation capability; `ActorCapability.Instance.invoke` client | reified |
 | 7 | `07-workflows/` | Durable workflows, saga, compensation | `WorkflowContext` deterministic replay; `callActivity` returns `Task[O]` | reified |
 | 8 | `08-cryptography/` | Encrypt/decrypt via `crypto.dapr.localstorage` | `CryptoCapability.Instance.encryptString`/`encrypt` over immutable `ArraySeq[Byte]` | reified |
@@ -372,7 +375,10 @@ is locked to (see "Two API styles" above): examples 1–11 are **reified**, 12�
 ### Scala.js examples (15 / 16 / 17)
 
 The `15-/16-/17-*` modules are `JsPureModule`/`JsShellModule` (Mill `ScalaJSModule` with
-`scalaJSExperimentalUseWebAssembly`, ES modules, ES2017), depending on `dapr4s_sjs1_3`. Each
+`scalaJSExperimentalUseWebAssembly` + `scalaJSUseWebAssemblyJSPI`, ES modules, ES2022), depending on
+`dapr4s_sjs1_3`. Scala.js 1.22 refuses to link `js.async`/`js.await` on Wasm without the explicit
+JSPI switch ("Uses an async block without JSPI support in WebAssembly"), and Mill exposes it only
+from 1.3.0 — do not downgrade Mill below that. The 1.22 Wasm backend also requires ES2022. Each
 service's pure `App.scala` is **copied verbatim from its JVM twin** (12/13/14) — keep them in
 sync; the only hand-written JS file is the shell `Main.scala` (upickle codecs + a single
 `js.async { Dapr(config).serve … }` entry reading ports from `process.env`). Build a service

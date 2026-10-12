@@ -138,6 +138,17 @@ final class ServerInfra(
   def daprHttpPort: Int = compose.get.getServicePort("app", 3500)
   def appHttpPort: Int = compose.get.getServicePort("app", 8080)
 
+  /** Runs a second main class from the same jar inside the `app` container. It shares the network namespace with the
+    * daprd sidecar, so it reaches daprd at localhost:3500/50001 just like the server does. Returns stdout.
+    */
+  def runInApp(mainClass: String): String =
+    val r = compose.get
+      .getContainerByServiceName("app")
+      .orElseThrow()
+      .execInContainer("java", "-cp", "/app.jar", mainClass)
+    assert(r.getExitCode == 0, s"$mainClass exited with ${r.getExitCode}:\n${r.getStdout}\n${r.getStderr}")
+    r.getStdout.nn
+
   def redisExec(args: String*): String =
     compose.get
       .getContainerByServiceName("redis")

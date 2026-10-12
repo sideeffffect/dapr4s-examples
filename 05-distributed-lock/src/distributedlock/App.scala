@@ -19,7 +19,16 @@ case class LockDemoResult(
     expected: Int,
     secondAcquire: Boolean, // attempted while A holds lock — expected false
     afterRelease: Boolean, // attempted after A releases  — expected true
+    foreignUnlock: Option[UnlockStatus], // B unlocks while A holds it — expected LockBelongsToOthers
 )
+
+// Unlock reports its outcome as a value, not an exception. The match is exhaustive: a new
+// UnlockStatus case in dapr4s would be a compile error here.
+def describe(status: UnlockStatus): String = status match
+  case UnlockStatus.Success             => "Success"
+  case UnlockStatus.LockNotFound        => "LockNotFound"
+  case UnlockStatus.LockBelongsToOthers => "LockBelongsToOthers"
+  case UnlockStatus.InternalError       => "InternalError"
 
 object DistributedLockApp:
   def apply(
@@ -46,14 +55,16 @@ object DistributedLockApp:
 
         val ownerA = LockOwner("process-A")
         val ownerB = LockOwner("process-B")
-        val secondAcquire =
+        val (secondAcquire, foreignUnlock) =
           if LockCapability.Instance.tryLock(resource, ownerA, expiry = lockExpiry) then
             val second = LockCapability.Instance.tryLock(resource, ownerB, expiry = shortExpiry)
+            // B does not own the lock, so B cannot release it: A keeps holding it.
+            val foreign = LockCapability.Instance.unlock(resource, ownerB)
             LockCapability.Instance.unlock(resource, ownerA)
-            second
-          else false
+            (second, Some(foreign))
+          else (false, None)
 
         val afterRelease = LockCapability.Instance.tryLock(resource, ownerB, expiry = lockExpiry)
         if afterRelease then LockCapability.Instance.unlock(resource, ownerB)
 
-        LockDemoResult(finalCounter, N, secondAcquire, afterRelease)
+        LockDemoResult(finalCounter, N, secondAcquire, afterRelease, foreignUnlock)

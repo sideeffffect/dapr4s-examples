@@ -3,7 +3,8 @@ package e2e
 class Example04ServiceInvocationTest extends E2ESuite:
 
   val infra = ServerInfra(
-    appId = "e2e-callee",
+    // The caller addresses the callee by this app-id (see CallerApp).
+    appId = "greeting-service",
     jarModule = "service-invocation",
     mainClass = "serviceinvocation.callee",
   )
@@ -46,4 +47,12 @@ class Example04ServiceInvocationTest extends E2ESuite:
     assert(count >= 2, s"expected ≥2 requests, got $count")
     assert(langs.contains("de"), clue(langs))
     assert(langs.contains("en"), clue(langs))
+  }
+
+  test("caller: typed invoke, invokeHttp status and InvokeHttpException") {
+    val out = infra.runInApp("serviceinvocation.caller")
+    assert(out.contains("Hello, Alice!  (from: greeting-service)"), clue(out))
+    assert(out.contains("Hi, Eve!  (from: greeting-service)"), clue(out))
+    assert(out.contains("invokeHttp no-such-method: HTTP 404"), clue(out))
+    assert(out.contains("invoke no-such-method: InvokeHttpException(HTTP 404)"), clue(out))
   }

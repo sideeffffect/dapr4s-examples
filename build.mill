@@ -18,7 +18,7 @@ object nightliesJvmWorker extends JvmWorkerModule:
   }
 
 val ScalaVersion = "3.10.0-RC1-bin-20260607-dec42ae-NIGHTLY"
-val Dapr4sVersion = "2.0.0"
+val Dapr4sVersion = "3.0.0"
 
 trait BaseModule extends ScalaModule:
   override def jvmWorker = ModuleRef(nightliesJvmWorker)
@@ -134,14 +134,20 @@ object `14-pricing-shell` extends ShellModule:
 // The pure `App.scala` of each service is shared verbatim with its JVM twin (the dapr4s
 // public API is identical across platforms); only the shell's `js.async` entry point and
 // env-driven config differ.
-val ScalaJSVersion = "1.21.0"
+val ScalaJSVersion = "1.22.0"
 
+// Scala.js 1.22 links `js.async`/`js.await` on WebAssembly only when JSPI is switched on
+// explicitly. Without it, linking dapr4s fails with "Uses an async block without JSPI support
+// in WebAssembly". Mill >= 1.3.0 exposes the switch as `scalaJSUseWebAssemblyJSPI` (the sbt
+// equivalent is `withWasmFeatures(_.withUseJSPI(true))`). The 1.22 Wasm backend also requires
+// ES2022 output.
 trait JsBaseModule extends BaseModule with ScalaJSModule:
   def scalaJSVersion = ScalaJSVersion
   override def scalaJSExperimentalUseWebAssembly = true
+  override def scalaJSUseWebAssemblyJSPI = true
   override def moduleKind = ModuleKind.ESModule
   override def moduleSplitStyle = ModuleSplitStyle.FewestModules
-  override def esFeatures = super.esFeatures().withESVersion(ESVersion.ES2017)
+  override def esFeatures = super.esFeatures().withESVersion(ESVersion.ES2022)
 
 trait Dapr4sJsModule extends JsBaseModule:
   override def scalacOptions = Seq("-experimental")

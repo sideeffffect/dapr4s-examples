@@ -1,6 +1,7 @@
 package distributedlock
 
 import dapr4s.*
+import dapr4s.lock.UnlockStatus
 import scala.concurrent.duration.DurationInt
 
 // ── Impure shell ──────────────────────────────────────────────────────────────
@@ -40,5 +41,11 @@ private def daprConfigFromEnv(): DaprConfig =
       }")
     println(
       s"process-B tryLock after A releases: ${r.afterRelease}  (expected true)   ${if r.afterRelease then "✓" else "✗"}",
+    )
+    val foreign = r.foreignUnlock.map(describe).getOrElse("not attempted")
+    println(
+      s"process-B unlock while A holds it: $foreign  (expected LockBelongsToOthers)  ${
+          if r.foreignUnlock.contains(UnlockStatus.LockBelongsToOthers) then "✓" else "✗"
+        }",
     )
   println("\n[distributed-lock] done.")

@@ -8,7 +8,12 @@ case class GreetRequest(name: String, language: String = "en")
 case class GreetResponse(greeting: String, from: String)
 case class StatsResponse(totalRequests: Long, languages: List[String])
 case class ServiceStats(count: Long, languages: List[String]) // internal state
-case class CallerResult(greetings: List[GreetResponse], stats: StatsResponse)
+case class CallerResult(
+    greetings: List[GreetResponse],
+    stats: StatsResponse,
+    unknownHttpStatus: Int, // invokeHttp: the status of a non-2xx answer comes back as a value
+    unknownTypedStatus: Option[Int], // typed invoke: the same answer is thrown as InvokeHttpException
+)
 
 val StatStore = StateStoreName("statestore")
 val StatsKey = StateStoreKey("service-stats")
@@ -65,7 +70,9 @@ object CalleeApp:
 
 // Remote calls are addressed by AppId; `invoke[In](appId, method, body)[Out]` ties both
 // the request and response types to the wire. The no-body overload (used for `stats`)
-// matches the callee's `InvokeRoute[Unit, StatsResponse]`.
+// matches the callee's `InvokeRoute[Unit, StatsResponse]`. A call to a route the callee does
+// not serve shows how a non-2xx answer surfaces: as a value from `invokeHttp`, as an
+// `InvokeHttpException` from the typed `invoke`.
 object CallerApp:
   def apply()(using
       DaprCapability,
@@ -85,4 +92,15 @@ object CallerApp:
       val greetings = requests.map: req =>
         InvokeCapability.invoke(target, InvokeMethodName("greet"), req)[GreetResponse]
       val s = InvokeCapability.invoke[StatsResponse](target, InvokeMethodName("stats"))
-      CallerResult(greetings, s)
+
+      // The callee serves no "no-such-method" route, so it answers 404.
+      val unknown = InvokeMethodName("no-such-method")
+      // invokeHttp never throws on status: status, headers and body come back as an InvokeResponse.
+      val raw = InvokeCapability.invokeHttp(target, unknown)
+      // The typed invoke decodes only 2xx answers; any other status is thrown as InvokeHttpException.
+      val typed =
+        try
+          InvokeCapability.invoke[StatsResponse](target, unknown)
+          None
+        catch case e: InvokeHttpException => Some(e.status)
+      CallerResult(greetings, s, raw.status, typed)

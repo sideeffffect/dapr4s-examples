@@ -16,3 +16,8 @@ class Example05DistributedLockTest extends E2ESuite:
     assert(out.contains("process-B tryLock while A holds it: false"), clue(out))
     assert(out.contains("process-B tryLock after A releases: true"), clue(out))
   }
+
+  test("unlock by a non-owner reports LockBelongsToOthers") {
+    val out = infra.run(jarModule = "distributed-lock", mainClass = "distributedlock.run")
+    assert(out.contains("process-B unlock while A holds it: LockBelongsToOthers"), clue(out))
+  }

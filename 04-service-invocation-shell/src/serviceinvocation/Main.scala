@@ -51,4 +51,9 @@ private def daprConfigFromEnv(defaultAppPort: Int): DaprConfig =
     println()
     println(s"Total requests: ${result.stats.totalRequests}")
     println(s"Languages seen: ${result.stats.languages.mkString(", ")}")
+    println()
+    println(s"invokeHttp no-such-method: HTTP ${result.unknownHttpStatus}")
+    println(
+      s"invoke no-such-method: ${result.unknownTypedStatus.fold("no exception")(st => s"InvokeHttpException(HTTP $st)")}",
+    )
   println("\n[caller] done.")

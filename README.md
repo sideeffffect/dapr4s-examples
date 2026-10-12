@@ -23,8 +23,8 @@ Every example is two modules:
 | 01 | State store |
 | 02 | Secrets & configuration |
 | 03 | Pub/sub |
-| 04 | Service invocation |
-| 05 | Distributed lock |
+| 04 | Service invocation (typed `invoke`; `invokeHttp` returns a non-2xx status as a value, typed `invoke` throws `InvokeHttpException`) |
+| 05 | Distributed lock (an unlock by a non-owner reports `UnlockStatus.LockBelongsToOthers`) |
 | 06 | Actors |
 | 07 | Workflows |
 | 08 | Cryptography (encrypt / decrypt via crypto.dapr.localstorage) |
@@ -46,8 +46,9 @@ re-implement the real-world case studies 12–14 on Scala.js to prove the publis
 artifact end to end: each service is the **same pure module** as its JVM twin, with only
 the shell's entry point differing (a single `js.async { Dapr(config).serve … }` at the
 program edge — `serve` suspends the WebAssembly stack via JSPI instead of parking a
-virtual thread). They link with the experimental Wasm backend (`scalaJSExperimentalUseWebAssembly`,
-ES modules, ES2017) and run as Node 25 processes (JSPI is on by default there), each paired
+virtual thread). They link with Scala.js 1.22's Wasm backend (`scalaJSExperimentalUseWebAssembly`
+plus the explicit JSPI switch `scalaJSUseWebAssemblyJSPI`, which needs Mill >= 1.3.0; ES modules,
+ES2022) and run as Node 25 processes (JSPI is on by default there), each paired
 with its own daprd sidecar — exactly like the JVM examples, but `node main.js` instead of
 `java -cp out.jar`.
 
@@ -55,14 +56,19 @@ with its own daprd sidecar — exactly like the JVM examples, but `node main.js`
 # Node 25 + the runtime npm deps the bundles import (@dapr/dapr, express):
 (cd e2e/js && npm ci)
 # Link the Wasm bundles, then run the three JS suites:
-./mill 15-scan-gateway-shell.fastLinkJS + 16-order-service-shell.fastLinkJS + 17-orders-shell.fastLinkJS  # …and the rest
+./mill __.fastLinkJS
 ./mill e2e.testForked '*Js*'
 ```
 
 ## Build & test
 
-Built with [Mill](https://mill-build.org/). Requires JVM 25 and Docker (the E2E
+Built with [Mill](https://mill-build.org/) 1.3 (the `./mill` launcher fetches it) against
+dapr4s 3.0.0 (`Dapr4sVersion` in `build.mill`). Requires JVM 25 and Docker (the E2E
 tests spin up Dapr infrastructure via testcontainers).
+
+Since dapr4s 3.0.0 every sidecar error is a subclass of the sealed `dapr4s.DaprException`
+(`ComponentNotFoundException`, `PermissionDeniedException`, `AppUnreachableException`,
+`InvokeHttpException`, `DaprApiException`); no SDK exception reaches example code.
 
 ```bash
 ./mill __.assembly      # build all assembly JARs
