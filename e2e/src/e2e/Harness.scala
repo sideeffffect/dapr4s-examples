@@ -16,7 +16,7 @@ object Harness:
       .getOrElse(locateJar(module))
 
   // Scans out/ for a pre-built assembly. Build the JARs first, e.g. `./mill __.assembly`
-  // (or just the ones a run needs: `./mill 14-orders-shell.assembly 14-pricing-shell.assembly`).
+  // (or just the ones a run needs: `./mill 14-orders-shell.assembly + 14-pricing-shell.assembly`).
   // Mill names the output directory after the module: out/NN-<module>-shell/assembly.dest/out.jar
   private def locateJar(module: String): os.Path =
     val outDir = ProjectRoot / "out"

@@ -130,7 +130,9 @@ jobs:
 
       - name: Build assembly JARs (observability — example 14 only)
         if: matrix.suite == 'observability'
-        run: ./mill 14-orders-shell.assembly 14-pricing-shell.assembly
+        # Mill 1.x needs `+` between tasks: without it the second task is passed as an argument to the
+        # first (which ignores it), so only 14-orders-shell was built and the pricing jar was missing.
+        run: ./mill 14-orders-shell.assembly + 14-pricing-shell.assembly
 
       # Docker (and docker compose v2) is pre-installed on ubuntu-latest.
       # Tests spin up Dapr infrastructure via Testcontainers; no dapr CLI needed.

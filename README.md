@@ -55,7 +55,7 @@ with its own daprd sidecar — exactly like the JVM examples, but `node main.js`
 # Node 25 + the runtime npm deps the bundles import (@dapr/dapr, express):
 (cd e2e/js && npm ci)
 # Link the Wasm bundles, then run the three JS suites:
-./mill 15-scan-gateway-shell.fastLinkJS 16-order-service-shell.fastLinkJS 17-orders-shell.fastLinkJS  # …and the rest
+./mill 15-scan-gateway-shell.fastLinkJS + 16-order-service-shell.fastLinkJS + 17-orders-shell.fastLinkJS  # …and the rest
 ./mill e2e.testForked '*Js*'
 ```
 
