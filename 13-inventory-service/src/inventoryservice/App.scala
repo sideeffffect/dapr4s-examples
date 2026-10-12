@@ -1,6 +1,8 @@
 package inventoryservice
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.state.*
 import dapr4s.derivation.*
 
 // ── 09 · ZEISS-style order fulfillment — inventory service ────────────────────
@@ -19,19 +21,19 @@ case class ReleaseRequest(reservationId: String, sku: String, quantity: Int)
 def stockKey(sku: String): StateStoreKey = StateStoreKey(s"stock-$sku")
 
 // Derived invocation routes: each method → an InvokeRoute. The handler bodies keep the
-// explicit StateCapability calls — stock arithmetic over a *dynamic* key (stock-<sku>) has no
+// explicit StateCapability.Instance calls — stock arithmetic over a *dynamic* key (stock-<sku>) has no
 // derived form; only the route wiring is derived.
 object InventoryRoutes:
-  def reserve(req: ReserveRequest)(using StateCapability, JsonCodec[Int]): ReservationResult =
-    val current = StateCapability.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
+  def reserve(req: ReserveRequest)(using StateCapability.Instance, JsonCodec[Int]): ReservationResult =
+    val current = StateCapability.Instance.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
     if current >= req.quantity then
-      StateCapability.save(stockKey(req.sku), current - req.quantity)
+      StateCapability.Instance.save(stockKey(req.sku), current - req.quantity)
       ReservationResult(reserved = true, s"RES-${req.orderId}")
     else ReservationResult(reserved = false, "")
 
-  def release(req: ReleaseRequest)(using StateCapability, JsonCodec[Int]): Unit =
-    val current = StateCapability.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
-    StateCapability.save(stockKey(req.sku), current + req.quantity)
+  def release(req: ReleaseRequest)(using StateCapability.Instance, JsonCodec[Int]): Unit =
+    val current = StateCapability.Instance.get[Int](stockKey(req.sku)).getOrElse(DefaultStock)
+    StateCapability.Instance.save(stockKey(req.sku), current + req.quantity)
 
 object InventoryApp:
   def apply()(using

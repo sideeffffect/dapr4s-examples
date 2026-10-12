@@ -1,6 +1,8 @@
 package serviceinvocation
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.state.*
 
 case class GreetRequest(name: String, language: String = "en")
 case class GreetResponse(greeting: String, from: String)
@@ -20,25 +22,26 @@ val StatsKey = StateStoreKey("service-stats")
 
 // ── Callee ────────────────────────────────────────────────────────────────────
 
-def greet(req: GreetRequest)(using StateCapability, JsonCodec[ServiceStats]): GreetResponse =
+def greet(req: GreetRequest)(using StateCapability.Instance, JsonCodec[ServiceStats]): GreetResponse =
   val greeting = req.language match
     case "en" => s"Hello, ${req.name}!"
     case "es" => s"¡Hola, ${req.name}!"
     case "fr" => s"Bonjour, ${req.name}!"
     case "de" => s"Hallo, ${req.name}!"
     case _    => s"Hi, ${req.name}!"
-  val current = StateCapability.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
+  val current = StateCapability.Instance.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
   val updated = current.copy(
     count = current.count + 1,
     languages =
       if current.languages.contains(req.language) then current.languages
       else current.languages :+ req.language,
   )
-  StateCapability.save(StatsKey, updated)
+  StateCapability.Instance.save(StatsKey, updated)
   GreetResponse(greeting, from = "greeting-service")
 
-def stats()(using StateCapability, JsonCodec[ServiceStats]): StatsResponse =
-  val s = StateCapability.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
+// Read-only handler: it only needs the ReadOnly tier, so it cannot write state.
+def stats()(using StateCapability.Instance.ReadOnly, JsonCodec[ServiceStats]): StatsResponse =
+  val s = StateCapability.Instance.ReadOnly.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
   StatsResponse(s.count, s.languages)
 
 object CalleeApp:

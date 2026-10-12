@@ -1,6 +1,7 @@
 package workflows
 
 import dapr4s.*
+import dapr4s.workflow.*
 import scala.concurrent.duration.*
 
 // ── Impure shell ──────────────────────────────────────────────────────────────

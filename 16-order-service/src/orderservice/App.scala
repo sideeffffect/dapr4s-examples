@@ -1,6 +1,8 @@
 package orderservice
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.workflow.*
 import dapr4s.derivation.*
 import scala.concurrent.duration.*
 

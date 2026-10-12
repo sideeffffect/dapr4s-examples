@@ -1,6 +1,7 @@
 package actors
 
 import dapr4s.*
+import dapr4s.actor.*
 import scala.concurrent.duration.FiniteDuration
 
 case class IncrBy(amount: Int)
@@ -95,7 +96,7 @@ val DemoActorId = ActorId("counter-1")
 // is the no-argument form.
 def driverGetState(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke[CounterState](ActorMethodName("get"))
+    ActorCapability.Instance.invoke[CounterState](ActorMethodName("get"))
 
 def driverIncrement(id: ActorId, by: IncrBy)(using
     DaprCapability,
@@ -103,8 +104,8 @@ def driverIncrement(id: ActorId, by: IncrBy)(using
     JsonCodec[CounterState],
 ): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke(ActorMethodName("increment"), by)[CounterState]
+    ActorCapability.Instance.invoke(ActorMethodName("increment"), by)[CounterState]
 
 def driverStartTimer(id: ActorId)(using DaprCapability, JsonCodec[CounterState]): CounterState =
   DaprCapability.actor(ActorTypeName, id):
-    ActorCapability.invoke[CounterState](ActorMethodName("startTimer"))
+    ActorCapability.Instance.invoke[CounterState](ActorMethodName("startTimer"))

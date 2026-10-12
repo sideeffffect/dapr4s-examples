@@ -1,6 +1,9 @@
 package scanresults
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.publish.*
+import dapr4s.state.*
 import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — results service ────────────────────────
@@ -27,7 +30,9 @@ case class Dashboard(totalScans: Int, totalFindings: Int, critical: Int, deadLet
 // the explicit getWithETag/saveWithETag compare-and-swap — optimistic-concurrency logic has no
 // derived form, so only the subscription wiring is derived.
 object ResultSubscriptions:
-  def scanCompleted(event: CloudEvent[ScanResult])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+  def scanCompleted(
+      event: CloudEvent[ScanResult],
+  )(using StateCapability.Instance, JsonCodec[Dashboard]): SubscriptionResult =
     val r = event.data
     updateDashboard(d =>
       d.copy(
@@ -39,23 +44,26 @@ object ResultSubscriptions:
     SubscriptionResult.Success
 
   // Dead-lettered scan requests land here after the worker's retry policy is exhausted.
-  def scanDeadLetter(event: CloudEvent[ScanRequest])(using StateCapability, JsonCodec[Dashboard]): SubscriptionResult =
+  def scanDeadLetter(
+      event: CloudEvent[ScanRequest],
+  )(using StateCapability.Instance, JsonCodec[Dashboard]): SubscriptionResult =
     updateDashboard(d => d.copy(deadLetters = d.deadLetters + 1))
     SubscriptionResult.Success
 
 // Derived invocation route: `dashboard` → InvokeMethodName("dashboard"), Unit input.
 object ResultRoutes:
-  def dashboard()(using StateCapability, JsonCodec[Dashboard]): Dashboard =
-    StateCapability.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
+  def dashboard()(using StateCapability.Instance, JsonCodec[Dashboard]): Dashboard =
+    StateCapability.Instance.get[Dashboard](DashboardKey).getOrElse(Dashboard(0, 0, 0, 0))
 
 // Compare-and-swap a fold over the dashboard aggregate, retrying on ETag conflict.
 @annotation.tailrec
-def updateDashboard(f: Dashboard => Dashboard)(using StateCapability, JsonCodec[Dashboard]): Unit =
-  val entry = StateCapability.getWithETag[Dashboard](DashboardKey)
+def updateDashboard(f: Dashboard => Dashboard)(using StateCapability.Instance, JsonCodec[Dashboard]): Unit =
+  val entry = StateCapability.Instance.getWithETag[Dashboard](DashboardKey)
   val updated = f(entry.value.getOrElse(Dashboard(0, 0, 0, 0)))
   entry.etag match
-    case Some(tag) => if StateCapability.saveWithETag(DashboardKey, updated, tag).isDefined then updateDashboard(f)
-    case None      => StateCapability.save(DashboardKey, updated)
+    case Some(tag) =>
+      if StateCapability.Instance.saveWithETag(DashboardKey, updated, tag).isDefined then updateDashboard(f)
+    case None => StateCapability.Instance.save(DashboardKey, updated)
 
 object ResultsApp:
   def apply()(using
@@ -68,8 +76,8 @@ object ResultsApp:
     DaprCapability.state(StateStore):
       // Seed the aggregate once at startup so concurrent updates always have an
       // ETag to compare-and-swap against (avoids a lost-update race on first write).
-      if StateCapability.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
-        StateCapability.save(DashboardKey, Dashboard(0, 0, 0, 0))
+      if StateCapability.Instance.getWithETag[Dashboard](DashboardKey).etag.isEmpty then
+        StateCapability.Instance.save(DashboardKey, Dashboard(0, 0, 0, 0))
       DaprApp(
         subscriptions = Subscriptions.derive[ResultSubscriptions.type](PubSubComponent),
         invokeRoutes = InvokeRoutes.derive[ResultRoutes.type],

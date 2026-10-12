@@ -1,6 +1,9 @@
 package orders
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.publish.*
+import dapr4s.workflow.*
 import dapr4s.derivation.*
 
 // ── 14 · Observability — orders service (workflow + invocation + pub/sub) ──────
@@ -39,7 +42,7 @@ trait PricingClient:
 def PricingClient(appId: AppId): PricingClient = Invoke.derive[PricingClient](appId)
 
 trait OrderTopics:
-  def orderCompleted(e: OrderEvent)(using PublishCapability, JsonCodec[OrderEvent]): Unit
+  def orderCompleted(e: OrderEvent)(using PublishCapability.Instance, JsonCodec[OrderEvent]): Unit
 lazy val OrderTopics: OrderTopics = Publish.derive[OrderTopics]
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -124,7 +127,7 @@ class OrderWorkflow(using
 
 // Derived subscription: method name (camelCase, verbatim) → Topic.
 object OrderSubscriptions:
-  def orderCompleted(event: CloudEvent[OrderEvent])(using PublishCapability, JsonCodec[OrderEvent]): SubscriptionResult =
+  def orderCompleted(event: CloudEvent[OrderEvent])(using PublishCapability.Instance, JsonCodec[OrderEvent]): SubscriptionResult =
     val _ = event.data
     SubscriptionResult.Success
 

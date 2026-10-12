@@ -1,6 +1,7 @@
 package workflows
 
 import dapr4s.*
+import dapr4s.workflow.*
 import scala.concurrent.duration.FiniteDuration
 
 case class OrderRequest(orderId: String, item: String, quantity: Int, budget: Double)

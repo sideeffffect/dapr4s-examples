@@ -1,6 +1,8 @@
 package scangateway
 
 import dapr4s.*
+import dapr4s.invoke.*
+import dapr4s.publish.*
 import dapr4s.derivation.*
 
 // ── 08 · Grafana-style scan pipeline — gateway service ────────────────────────
@@ -9,7 +11,7 @@ import dapr4s.derivation.*
 // publishes each request onto the `scanRequested` topic for the worker fleet.
 //
 // Fully derived: the publisher and the invocation route are both generated from
-// trait/object descriptions — no reified `PublishCapability.publish`, no
+// trait/object descriptions — no reified `PublishCapability.Instance.publish`, no
 // `InvokeRoute[...]` list.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -20,12 +22,12 @@ case class SubmitResponse(accepted: Boolean, scanId: String)
 
 // Derived publisher: method name (camelCase, verbatim) → Topic.
 trait ScanTopics:
-  def scanRequested(req: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): Unit
+  def scanRequested(req: ScanRequest)(using PublishCapability.Instance, JsonCodec[ScanRequest]): Unit
 lazy val ScanTopics: ScanTopics = Publish.derive[ScanTopics]
 
 // Derived invocation routes: each method → an InvokeRoute (name → InvokeMethodName).
 object GatewayRoutes:
-  def submit(req: ScanRequest)(using PublishCapability, JsonCodec[ScanRequest]): SubmitResponse =
+  def submit(req: ScanRequest)(using PublishCapability.Instance, JsonCodec[ScanRequest]): SubmitResponse =
     ScanTopics.scanRequested(req)
     SubmitResponse(accepted = true, req.scanId)
 
