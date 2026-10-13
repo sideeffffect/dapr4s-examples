@@ -393,7 +393,7 @@ E2E_SKIP_JS` so the `core` CI leg skips them and the dedicated `e2e-scala-js` jo
 
 `wasm/` holds a **separate sbt build** that turns two existing pure modules into WASI
 **components** for [dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components)
-0.7.0 (scala-wasm fork of Scala.js, `ModuleKind.WasmComponent`), run in `wasmtime serve` next to a
+0.7.1 (scala-wasm fork of Scala.js, `ModuleKind.WasmComponent`), run in `wasmtime serve` next to a
 real daprd:
 
 | Component | Pure module (unchanged, shared with the JVM) | Wasm shell |
@@ -426,12 +426,12 @@ real daprd:
   (`def app(using StateCapability): DaprApp`) + the fixed-name `object dapr4s.wasm.ComponentRoot { def
   component = X }` (a reactor has no `main`; a missing one is a link error). Codecs: upickle 3.3.1 like
   the JVM shells. Only state + inbound service invocation exist on the Wasm wall today.
-- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.0;`,
+- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.1;`,
   `wasm/wkg-config.toml` (upstream), `wasm/wkg.lock` committed, `wasm/wit/deps/` git-ignored. The
   plugin runs `wkg wit fetch` and re-embeds that world into each component.
-- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.0 tag**
-  (never `main`). At that tag it exits 1 even on success (its EXIT trap), so its exit code is ignored
-  and success is judged by a validating output file.
+- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.1 tag**
+  (never `main`; it exits 0 on success since v0.7.1 — at v0.7.0 it exited 1 even on success) and
+  validates the output. Bump the tag together with `world.wit`/`wkg.lock` (newest WIT release).
 - **E2E** (`wasm/scripts/e2e.sh`, `./mill wasm.e2e`, CI job `e2e-wasm`): Redis in Docker
   (`localhost:26490`), daprd via `dapr run` (slim), `wasmtime serve`; asserts 18's report lines (the
   same as `Example01HelloStateTest`), 19's greet/stats/404 (the same cases as

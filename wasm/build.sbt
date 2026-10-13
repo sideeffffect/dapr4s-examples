@@ -3,7 +3,7 @@
 //
 // The same pure modules as the JVM examples (../01-hello-state, ../04-service-invocation), compiled
 // by the same Scala 3 nightly with the same flags, plus a Wasm "shell" per example that turns the
-// pure code into a WASI component for dapr-wasm-components 0.7.0:
+// pure code into a WASI component for dapr-wasm-components 0.7.1:
 //
 //   18-hello-state-shell          01's HelloStateApp.run behind an invoke route `run`
 //   19-service-invocation-shell   04's CalleeApp.app (greeting-service), called by 04's JVM caller
@@ -15,7 +15,7 @@
 //
 // Classpath: Maven Central dapr4s (dapr4s_sjs1_3, Scala.js IR) + the small dapr4s wasm layer from a
 // publishLocal of a pinned dapr4s commit (dapr4s-wasm.env). The plugin (project/plugins.sbt)
-// provides `dapr4sWasmVersion`, `dapr4sWasmWitExports`, `Dapr4sWasmPlugin`, `Dapr4sWasmComponentPlugin`.
+// provides `dapr4sWasmVersion`, `dapr4sWasmGlueExports`, `Dapr4sWasmPlugin`, `Dapr4sWasmComponentPlugin`.
 // =================================================================================================
 
 val repoDir = file("..").getAbsoluteFile.getCanonicalFile
@@ -58,7 +58,7 @@ def componentShell(dir: String) = Seq(
   scalacOptions ++= shellFlags,
   libraryDependencies ++= Seq(
     "com.github.sideeffffect" %%% "dapr4s-wasm" % dapr4sWasmVersion,
-    dapr4sWasmWitExports(dapr4sWasmVersion),
+    dapr4sWasmGlueExports(dapr4sWasmVersion),
     upickle.value,
   ),
 ) ++ srcOnly(file(dir).getAbsoluteFile / "src")

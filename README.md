@@ -65,7 +65,7 @@ with its own daprd sidecar — exactly like the JVM examples, but `node main.js`
 ### WASI-component examples (18 / 19) — prototype
 
 dapr4s is growing a third platform: a dapr4s app built as a **WASI component** for
-[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.0, with the
+[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.1, with the
 [scala-wasm](https://github.com/scala-wasm/scala-wasm) fork of Scala.js (`ModuleKind.WasmComponent`).
 Examples 18 and 19 compile the **unchanged pure modules of 01 and 04** into components, compose
 them with the dapr-wasm-components wasi-http providers and run them in `wasmtime serve` next to a
@@ -83,7 +83,7 @@ What `./mill wasm.e2e` does (each step is a script in `wasm/scripts/`, usable on
    (skipped when already in `~/.ivy2/local`);
 2. `build.sh` — `sbt` in `wasm/`: format check, link, and re-embed the WIT world →
    `wasm/target/components/{18-hello-state-shell,19-service-invocation-shell}.wasm`;
-3. `e2e.sh` — compose (dapr-wasm-components `compose.sh` at the `v0.7.0` tag), `dapr run … --
+3. `e2e.sh` — compose (dapr-wasm-components `compose.sh` at the `v0.7.1` tag), `dapr run … --
    wasmtime serve`, and assert the real responses (the same assertions as the JVM e2e of 01 and 04).
 
 **Why a separate sbt build?** The scala-wasm fork exists only as an sbt plugin, and it is a fork of

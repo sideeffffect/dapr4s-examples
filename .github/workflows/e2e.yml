@@ -234,11 +234,11 @@ jobs:
   # The Wasm examples are a separate sbt build (wasm/) driven by `./mill wasm.e2e`: the scala-wasm fork
   # of Scala.js (`ModuleKind.WasmComponent`) exists only as an sbt plugin and cannot share a build with
   # 15-17's mainline Scala.js. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the small
-  # dapr4s wasm layer (wall + 2.13 WIT glue + sbt-dapr4s-wasm plugin) is not on Central yet, so this job
+  # dapr4s wasm layer (wall + 2.13 WIT glue `dapr4s-wasm-glue` + sbt-dapr4s-wasm plugin) is not on Central yet, so this job
   # publishLocal's it from the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of dapr4s PR #44,
   # https://github.com/sideeffffect/dapr4s/pull/44). Once that is merged and released, the pin becomes a
   # release version and the dapr4s build steps below go away.
-  # The components are composed with dapr-wasm-components 0.7.0 (compose.sh at the v0.7.0 tag) and run
+  # The components are composed with dapr-wasm-components 0.7.1 (compose.sh at the v0.7.1 tag) and run
   # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
   # real output, including 04's unchanged JVM caller calling the Wasm greeting-service.
   e2e-wasm:
