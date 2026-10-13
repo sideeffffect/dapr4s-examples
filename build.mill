@@ -346,3 +346,37 @@ object e2e extends BaseModule with TestModule.Munit:
   override def forkArgs: T[Seq[String]] = Task {
     Seq(s"-De2e.projectRoot=${workspaceRoot}")
   }
+
+// ── WASI-component examples (18 / 19) ─────────────────────────────────────────
+// The Wasm examples live in a SEPARATE sbt build under wasm/ (the scala-wasm fork of
+// Scala.js — `ModuleKind.WasmComponent`, WIT bindings — exists only as an sbt plugin, and it
+// is a fork of sbt-scalajs that cannot share a build with examples 15-17's mainline Scala.js).
+// Mill stays the entry point: these commands just shell out to wasm/scripts/*.sh, which run
+// sbt, wkg, wasm-tools, the upstream compose.sh, wasmtime and the dapr CLI. Nothing here is
+// cached by Mill (Task.Command); the sbt build has its own incremental state in wasm/target.
+//
+//   ./mill wasm.publishDapr4s   publishLocal the pinned dapr4s wasm layer (wasm/dapr4s-wasm.env)
+//   ./mill wasm.build           build the components -> wasm/target/components/*.wasm
+//   ./mill wasm.e2e             all of the above + 04's JVM caller, then wasm/scripts/e2e.sh
+// See README.md "WASI-component examples (18 / 19)" for the tools they need.
+object wasm extends Module:
+  private def script(name: String, env: Map[String, String] = Map.empty): Unit =
+    os.proc("bash", moduleDir / "scripts" / name)
+      .call(cwd = moduleDir, env = env, stdout = os.Inherit, stderr = os.Inherit)
+
+  def publishDapr4s(): Command[Unit] = Task.Command(exclusive = true) {
+    script("publish-dapr4s-wasm.sh")
+  }
+
+  def build(): Command[Unit] = Task.Command(exclusive = true) {
+    script("publish-dapr4s-wasm.sh")
+    script("build.sh")
+  }
+
+  def e2e(): Command[Unit] = Task.Command(exclusive = true) {
+    // 04's JVM caller (dapr4s 3.0.0 from Maven Central) drives the Wasm greeting-service.
+    val callerJar = `04-service-invocation-shell`.assembly().path
+    script("publish-dapr4s-wasm.sh")
+    script("build.sh")
+    script("e2e.sh", Map("CALLER_JAR" -> callerJar.toString))
+  }

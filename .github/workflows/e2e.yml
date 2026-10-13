@@ -230,6 +230,111 @@ jobs:
           path: out/e2e/testForked.dest/
           if-no-files-found: ignore
 
+  # ── WASI-component examples (18/19) ───────────────────────────────────────────
+  # The Wasm examples are a separate sbt build (wasm/) driven by `./mill wasm.e2e`: the scala-wasm fork
+  # of Scala.js (`ModuleKind.WasmComponent`) exists only as an sbt plugin and cannot share a build with
+  # 15-17's mainline Scala.js. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the small
+  # dapr4s wasm layer (wall + 2.13 WIT glue + sbt-dapr4s-wasm plugin) is not on Central yet, so this job
+  # publishLocal's it from the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of dapr4s PR #44,
+  # https://github.com/sideeffffect/dapr4s/pull/44). Once that is merged and released, the pin becomes a
+  # release version and the dapr4s build steps below go away.
+  # The components are composed with dapr-wasm-components 0.7.0 (compose.sh at the v0.7.0 tag) and run
+  # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
+  # real output, including 04's unchanged JVM caller calling the Wasm greeting-service.
+  e2e-wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    name: e2e (wasm components)
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Read the dapr4s pin (wasm/dapr4s-wasm.env)
+        run: grep -E '^[A-Z0-9_]+=' wasm/dapr4s-wasm.env >> "$GITHUB_ENV"
+
+      - name: Cache Mill, Coursier and sbt
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.cache/mill
+            ~/.sbt
+            out
+          key: mill-wasm-${{ hashFiles('.mill-version', 'build.mill', 'wasm/build.sbt', 'wasm/project/*') }}-${{ hashFiles('**/*.scala') }}
+          restore-keys: |
+            mill-wasm-${{ hashFiles('.mill-version', 'build.mill', 'wasm/build.sbt', 'wasm/project/*') }}-
+            mill-wasm-
+
+      # Same tool versions as dapr4s's own wasm CI leg.
+      - name: Install wasm tools (wasm-tools, wasmtime, wkg, wac)
+        env:
+          WASM_TOOLS_VERSION: 1.261.0
+          WASMTIME_VERSION: 49.0.2
+          WKG_VERSION: 0.16.1
+          WAC_VERSION: 0.10.0
+        run: |
+          set -euo pipefail
+          bin="$HOME/.local/bin"; mkdir -p "$bin"; echo "$bin" >> "$GITHUB_PATH"
+          rel=https://github.com/bytecodealliance
+          curl -fsSL "$rel/wasm-tools/releases/download/v${WASM_TOOLS_VERSION}/wasm-tools-${WASM_TOOLS_VERSION}-x86_64-linux.tar.gz" \
+            | tar -xz -C /tmp
+          mv "/tmp/wasm-tools-${WASM_TOOLS_VERSION}-x86_64-linux/wasm-tools" "$bin/"
+          curl -fsSL "$rel/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+            | tar -xJ -C /tmp
+          mv "/tmp/wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime" "$bin/"
+          curl -fsSL -o "$bin/wkg" "$rel/wasm-pkg-tools/releases/download/v${WKG_VERSION}/wkg-x86_64-unknown-linux-gnu"
+          curl -fsSL -o "$bin/wac" "$rel/wac/releases/download/v${WAC_VERSION}/wac-cli-x86_64-unknown-linux-musl"
+          chmod +x "$bin/wkg" "$bin/wac"
+          "$bin/wasm-tools" --version; "$bin/wasmtime" --version; "$bin/wkg" --version; "$bin/wac" --version
+
+      # The scala-wasm sbt plugin runs `wit-bindgen-scala` (crate 0.1.0) when dapr4s's wasm layer is built.
+      - name: Cache wit-bindgen-scala
+        id: cache-wbs
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/wit-bindgen-scala
+          key: wit-bindgen-scala-0.1.0-${{ runner.os }}
+      - name: Install wit-bindgen-scala
+        if: steps.cache-wbs.outputs.cache-hit != 'true'
+        run: cargo install wit-bindgen-scala --version 0.1.0 --locked
+
+      - name: Install the dapr CLI and daprd (slim)
+        run: |
+          wget -q https://raw.githubusercontent.com/dapr/cli/v1.15.1/install/install.sh -O - | /bin/bash -s 1.15.1
+          dapr init --slim --runtime-version 1.17.7
+          echo "$HOME/.dapr/bin" >> "$GITHUB_PATH"
+
+      # The patched scala-wasm linker and the dapr4s wasm layer both land in ~/.ivy2/local and are a pure
+      # function of the pinned dapr4s commit: cache them under it. On a miss, `./mill wasm.e2e` (via
+      # wasm/scripts/publish-dapr4s-wasm.sh) clones dapr4s at that commit, builds the linker and publishes.
+      - name: Cache the patched linker + dapr4s wasm layer (~/.ivy2/local)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.ivy2/local/io.github.scala-wasm
+            ~/.ivy2/local/com.github.sideeffffect
+          key: dapr4s-wasm-layer-${{ env.DAPR4S_COMMIT }}-${{ env.DAPR4S_CORE_RELEASE }}
+
+      - name: Build + run the WASI-component e2e (./mill wasm.e2e)
+        timeout-minutes: 30
+        run: ./mill wasm.e2e
+
+      - name: Upload e2e logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results-wasm
+          path: wasm/target/e2e/
+          if-no-files-found: ignore
+
   slides:
     runs-on: ubuntu-latest
     timeout-minutes: 20

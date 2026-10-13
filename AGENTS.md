@@ -389,6 +389,63 @@ E2E_SKIP_JS` so the `core` CI leg skips them and the dedicated `e2e-scala-js` jo
 (Node 25 + `npm ci` in `e2e/js` + `fastLinkJS` + `e2e.testForked '*Js*'`). Runtime npm deps
 (`@dapr/dapr`, `express`) live in `e2e/js/`.
 
+### WASI-component examples (18 / 19) — prototype
+
+`wasm/` holds a **separate sbt build** that turns two existing pure modules into WASI
+**components** for [dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components)
+0.7.0 (scala-wasm fork of Scala.js, `ModuleKind.WasmComponent`), run in `wasmtime serve` next to a
+real daprd:
+
+| Component | Pure module (unchanged, shared with the JVM) | Wasm shell |
+|---|---|---|
+| `18-hello-state-shell` | `01-hello-state` (`HelloStateApp.run`) | route `run` returns 01's report lines |
+| `19-service-invocation-shell` | `04-service-invocation` (`CalleeApp.app`) | the greeting-service; 04's JVM `caller` calls it |
+
+- **Why sbt, why separate**: the scala-wasm fork ships only an sbt plugin, and it is a fork of
+  sbt-scalajs with the same classes, so it cannot share a build with 15–17's mainline Scala.js. dapr4s
+  keeps its own wasm build apart for the same reason. **Mill stays the entry point**: `object wasm`
+  in `build.mill` shells out to `wasm/scripts/*.sh` (`./mill wasm.publishDapr4s`, `wasm.build`,
+  `wasm.e2e`). Hacky by design: Mill caches nothing there; sbt keeps its own state in `wasm/target`.
+- **Same pure code**: the sbt build compiles `../01-hello-state/src` and `../04-service-invocation/src`
+  with the same nightly (read from `build.mill`'s `ScalaVersion`) and the same flags as Mill's
+  `PureModule`, against the shared dapr4s API only. The pure modules expose a `StateCapability.Instance`-only
+  entry (`HelloStateApp.run`, `CalleeApp.app`) because the Wasm wall hands a component only state;
+  the JVM `apply()`s just open that instance and delegate. Keep it that way when editing 01/04.
+- **Classpath = Maven Central dapr4s + a small local wasm layer**: `dapr4s_sjs1_3:3.0.0` (Central,
+  Scala.js IR, linked into the component by the scala-wasm linker) + the dapr4s wasm wall, its 2.13
+  WIT bindings/glue and the `sbt-dapr4s-wasm` plugin, which are **not on Central yet**: they come
+  from a `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (a commit of
+  [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44), built in its "release mode" so the
+  layer depends on Central `dapr4s_sjs1_3`). `wasm/scripts/publish-dapr4s-wasm.sh` does the clone,
+  the patched-linker build and the publish, and fails if the published version differs from the pin.
+  **When PR #44 is merged and the layer is released, move the pin to the release version, delete
+  the publish script and its CI steps, and resolve everything from Central.** To bump the pin: set
+  `DAPR4S_COMMIT` + `DAPR4S_WASM_VERSION` (the sbt-dynver version of that commit,
+  `<tag>+<n>-<sha8>-SNAPSHOT`) together.
+- **The component contract** (what a shell writes): `object X extends dapr4s.wasm.DaprComponent`
+  (`def app(using StateCapability): DaprApp`) + the fixed-name `object dapr4s.wasm.ComponentRoot { def
+  component = X }` (a reactor has no `main`; a missing one is a link error). Codecs: upickle 3.3.1 like
+  the JVM shells. Only state + inbound service invocation exist on the Wasm wall today.
+- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.0;`,
+  `wasm/wkg-config.toml` (upstream), `wasm/wkg.lock` committed, `wasm/wit/deps/` git-ignored. The
+  plugin runs `wkg wit fetch` and re-embeds that world into each component.
+- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.0 tag**
+  (never `main`). At that tag it exits 1 even on success (its EXIT trap), so its exit code is ignored
+  and success is judged by a validating output file.
+- **E2E** (`wasm/scripts/e2e.sh`, `./mill wasm.e2e`, CI job `e2e-wasm`): Redis in Docker
+  (`localhost:26490`), daprd via `dapr run` (slim), `wasmtime serve`; asserts 18's report lines (the
+  same as `Example01HelloStateTest`), 19's greet/stats/404 (the same cases as
+  `Example04ServiceInvocationTest`) and the output of 04's JVM caller against the Wasm callee.
+- **Formatting**: the sbt build checks its own sources (`scalafmtCheckAll scalafmtSbtCheck`, run by
+  `wasm/scripts/build.sh`) with the root `.scalafmt.conf`; Mill's `checkFormatAll` does not see them.
+- **Tools** (CI pins the same): JDK 25, sbt, Docker, dapr CLI 1.15.1 + daprd 1.17.7
+  (`dapr init --slim`), wasm-tools 1.261.0, wasmtime 49.0.2, wkg 0.16.1, wac 0.10.0,
+  wit-bindgen-scala 0.1.0 (`cargo install`), python3, curl.
+- **Upstream scala-wasm blockers** (worked around in dapr4s, see its AGENTS.md "Wasm component layer
+  rules"): no WIT codegen in mainline Scala 3 (2.13 glue), linker cannot read export params from
+  linear memory (patched linker built from source), linker drops WIT aliases (WIT re-embed), nightly
+  stdlib uses JS interop (`.sjsir` overlay), no `main` in a reactor (`ComponentRoot`).
+
 > The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
 > SigNoz by asserting the funnel collector's own pipeline counters
 > (`otelcol_exporter_sent_spans` / `_metric_points` / `_log_records` > 0) — no SigNoz
@@ -424,7 +481,9 @@ Run the full suite (assemblies first, then the forked tests):
 ./mill e2e.testForked     # run the e2e suites (Docker required)
 ```
 
-This is exactly what CI runs (`.github/workflows/e2e.yml`, job `e2e`).
+This is exactly what CI runs (`.github/workflows/e2e.yml`, job `e2e`). The WASI-component
+examples have their own entry point and CI job: `./mill wasm.e2e` / `e2e-wasm` (see
+"WASI-component examples (18 / 19)").
 
 ## Slides
 
