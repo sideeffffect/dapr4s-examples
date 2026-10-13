@@ -3,7 +3,7 @@
 //
 // The same pure modules as the JVM examples (../01-hello-state, ../04-service-invocation), compiled
 // by the same Scala 3 nightly with the same flags, plus a Wasm "shell" per example that turns the
-// pure code into a WASI component for dapr-wasm-components 0.7.1:
+// pure code into a WASI component for dapr-wasm-components 0.7.2:
 //
 //   18-hello-state-shell          01's HelloStateApp.run behind an invoke route `run`
 //   19-service-invocation-shell   04's CalleeApp.app (greeting-service), called by 04's JVM caller
