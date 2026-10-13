@@ -24,9 +24,11 @@ fi
 git -C "$dir" fetch --quiet --tags origin "$DAPR4S_COMMIT" 2>/dev/null || git -C "$dir" fetch --quiet --tags origin
 git -C "$dir" checkout --quiet --force "$DAPR4S_COMMIT"
 "$dir/scripts/wasm/build-patched-linker.sh"
-got="$(cd "$dir/wasm" && sbt -batch -Ddapr4s.wasm.coreRelease="$DAPR4S_CORE_RELEASE" publishLocal 'print wallWasm/version' | tail -1 | tr -d '[:space:]')"
-if [[ "$got" != "$DAPR4S_WASM_VERSION" ]]; then
-  echo "publish-dapr4s-wasm.sh: dapr4s $DAPR4S_COMMIT published $got, but dapr4s-wasm.env pins $DAPR4S_WASM_VERSION" >&2
+(cd "$dir/wasm" && sbt -batch -no-colors -Ddapr4s.wasm.coreRelease="$DAPR4S_CORE_RELEASE" publishLocal)
+# The version is sbt-dynver's for that commit; it must be the one wasm/project/plugins.sbt resolves.
+if [[ ! -d "$ivy/dapr4s-wasm_sjs1_3/$DAPR4S_WASM_VERSION" || ! -d "$ivy/sbt-dapr4s-wasm/scala_2.12/sbt_1.0/$DAPR4S_WASM_VERSION" ]]; then
+  echo "publish-dapr4s-wasm.sh: dapr4s $DAPR4S_COMMIT did not publish $DAPR4S_WASM_VERSION (pinned in dapr4s-wasm.env); found:" >&2
+  ls "$ivy/dapr4s-wasm_sjs1_3" >&2 || true
   exit 1
 fi
-echo "publish-dapr4s-wasm.sh: published the dapr4s wasm layer $got (on dapr4s_sjs1_3 $DAPR4S_CORE_RELEASE)"
+echo "publish-dapr4s-wasm.sh: published the dapr4s wasm layer $DAPR4S_WASM_VERSION (on dapr4s_sjs1_3 $DAPR4S_CORE_RELEASE)"
