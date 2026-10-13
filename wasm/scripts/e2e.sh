@@ -8,14 +8,16 @@
 #                                  (dapr4s 3.0.0 on the JVM) calls the Wasm greeting-service through daprd.
 #
 # Needs: Docker, the dapr CLI + daprd (`dapr init --slim`), wasmtime, wasm-tools, wkg, wac, python3, curl, a JDK,
-# the built components (wasm/scripts/build.sh) and 04's JVM caller jar (CALLER_JAR, default: Mill's assembly).
-# `./mill wasm.e2e` builds everything and runs this script.
+# the built components in $E2E_WORK/components/<example>.wasm and 04's JVM caller jar (CALLER_JAR, default: Mill's
+# assembly). `./mill wasm.e2e` builds both, puts the components there and runs this script (E2E_WORK = its out/
+# directory, so the logs land in out/wasm/e2e.dest/logs).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 wasm="$(cd "$here/.." && pwd)"
 repo="$(cd "$wasm/.." && pwd)"
-components="$wasm/target/components"
-logs="$wasm/target/e2e"
+work="${E2E_WORK:-$repo/out/wasm/e2e.dest}"
+components="$work/components"
+logs="$work/logs"
 caller_jar="${CALLER_JAR:-$repo/out/04-service-invocation-shell/assembly.dest/out.jar}"
 redis=dapr4s-examples-wasm-redis
 mkdir -p "$logs"
@@ -45,7 +47,7 @@ fail() {
 
 [[ -s "$caller_jar" ]] || fail "04's JVM caller jar not found at $caller_jar (./mill 04-service-invocation-shell.assembly)"
 for c in 18-hello-state-shell 19-service-invocation-shell; do
-  [[ -s "$components/$c.wasm" ]] || fail "$components/$c.wasm not built (wasm/scripts/build.sh)"
+  [[ -s "$components/$c.wasm" ]] || fail "$components/$c.wasm not built (./mill wasm.e2e builds it)"
 done
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$redis"; then

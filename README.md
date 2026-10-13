@@ -58,7 +58,7 @@ with its own daprd sidecar — exactly like the JVM examples, but `node main.js`
 # Node 25 + the runtime npm deps the bundles import (@dapr/dapr, express):
 (cd e2e/js && npm ci)
 # Link the Wasm bundles, then run the three JS suites:
-./mill __.fastLinkJS
+./mill _.fastLinkJS
 ./mill e2e.testForked '*Js*'
 ```
 
@@ -73,53 +73,62 @@ real daprd + Redis. In 19, example 04's JVM `caller` (dapr4s on the JVM) calls t
 greeting-service through daprd, exactly as it calls the JVM one.
 
 ```bash
-./mill wasm.e2e    # publishLocal the dapr4s wasm artifacts, build both components, run the e2e
+wasm/scripts/publish-dapr4s-wasm.sh all   # once: publishLocal the pinned dapr4s plugin + wasm artifacts
+./mill wasm.e2e                           # build both components + 04's JVM caller, run the e2e
 ```
 
-What `./mill wasm.e2e` does (each step is a script in `wasm/scripts/`, usable on its own):
+The components are ordinary modules of this Mill build (`object wasm` in `build.mill`):
+`wasm.18-hello-state-shell` and `wasm.19-service-invocation-shell`, on top of `wasm.01-hello-state` and
+`wasm.04-service-invocation` (01's and 04's pure sources, recompiled for the wasm platform).
+`./mill show wasm.18-hello-state-shell.dapr4sComponent` builds one component and prints its path.
+`./mill wasm.e2e` builds both and runs `wasm/scripts/e2e.sh`: compose (dapr-wasm-components `compose.sh` at
+the `v0.7.2` tag), `dapr run … -- wasmtime serve`, and assert the real responses (the same assertions as
+the JVM e2e of 01 and 04). Logs: `out/wasm/e2e.dest/logs/`.
 
-1. `publish-dapr4s-wasm.sh` — clones dapr4s at the commit pinned in `wasm/dapr4s-wasm.env` and
-   `publishLocal`s its six wasm artifacts (skipped when already in `~/.ivy2/local`);
-2. `build.sh` — `sbt` in `wasm/`: format check, link, and re-embed the WIT world →
-   `wasm/target/components/{18-hello-state-shell,19-service-invocation-shell}.wasm`;
-3. `e2e.sh` — compose (dapr-wasm-components `compose.sh` at the `v0.7.2` tag), `dapr run … --
-   wasmtime serve`, and assert the real responses (the same assertions as the JVM e2e of 01 and 04).
-
-**Why a separate sbt build?** The scala-wasm fork exists only as an sbt plugin, and it is a fork of
-sbt-scalajs, so it cannot live in the same build as examples 15–17 (mainline Scala.js). Mill stays
-the entry point and simply shells out to sbt (and to wkg, wasm-tools, wasmtime, the dapr CLI).
-
-**What a component needs.** The `sbt-dapr4s-wasm` plugin, one dependency and one fixed-name object —
-nothing else in the build (`wasm/project/plugins.sbt`, `wasm/build.sbt`):
+**What a component needs.** dapr4s's Mill plugin `mill-dapr4s-wasm`, one dependency and one fixed-name
+object — nothing else in the build:
 
 ```scala
-// project/plugins.sbt
-addSbtPlugin("com.github.sideeffffect" % "sbt-dapr4s-wasm" % dapr4sWasmVersion)
-// build.sbt (+ wit/world.wit, wkg-config.toml, wkg.lock)
-lazy val app = project
-  .enablePlugins(Dapr4sWasmComponentPlugin)
-  .settings(libraryDependencies += "com.github.sideeffffect" %%% "dapr4s-wasm" % dapr4sWasmVersion)
+//| mvnDeps: ["com.github.sideeffffect::mill-dapr4s-wasm::<version>"]   // build.mill header
+import dapr4s.millwasm.*
+
+// + wit/world.wit, wkg-config.toml, wkg.lock (here: shared, in wasm/)
+object app extends Dapr4sWasmComponentModule:
+  def scalaVersion = "<the Scala 3 nightly dapr4s is built with>"
+  def mvnDeps = Seq(mvn"com.github.sideeffffect::dapr4s-wasm::$dapr4sWasmVersion")
 // src: object dapr4s.wasm.ComponentRoot { def component: DaprComponent = MyComponent }
 ```
 
-The dapr4s wasm artifacts: `dapr4s-wasm` (the adapters; depends on dapr4s core, here the published
-`dapr4s_sjs1_3` 3.0.0, whose Scala.js IR is linked into the component), `dapr4s-wasm-glue` (+ `-exports`;
-the Scala 2.13 WIT glue), `dapr4s-wasm-scalalib-overlay`, `dapr4s-wasm-linker` and the plugin.
+The plugin carries every build-level workaround: the scala-wasm fork of Scala.js (only in the modules that
+mix it in, so examples 15–17 keep mainline Scala.js), the patched linker, the stdlib overlay, the dependency
+exclusions, the WIT trampolines, `wkg wit fetch` (WIT only through OCI) and the component task
+`dapr4sComponent`. The dapr4s wasm artifacts: `dapr4s-wasm` (the adapters; depends on dapr4s core, here the
+published `dapr4s_sjs1_3` 3.0.0, whose Scala.js IR is linked into the component), `dapr4s-wasm-glue`
+(+ `-exports`; the Scala 2.13 WIT glue), `dapr4s-wasm-scalalib-overlay` and `dapr4s-wasm-linker`.
 
-**Prototype status.** Those artifacts are in [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44),
-with Central publishing wired but switched off, hence the `publishLocal` of a pinned commit; after a
-release they become ordinary Maven Central dependencies. Only state and inbound service invocation are
-available on the Wasm wall so far. Upstream scala-wasm gaps, each worked around in dapr4s (nothing is
-sent upstream): no WIT codegen in mainline Scala 3 (a small Scala 2.13 glue); the linker cannot pass
-WIT params through linear memory (> 16 flat params, exports and imports: `dapr4s-wasm-linker`, scala-wasm's
-linker with a patch); the linker drops WIT aliases (the plugin re-embeds the WIT world); JS interop in the
-nightly's Scala.js stdlib (`dapr4s-wasm-scalalib-overlay`).
+**Prototype status.** The plugin and the artifacts are in
+[dapr4s PR #45](https://github.com/sideeffffect/dapr4s/pull/45) (not released yet), hence the
+`publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (at the version `build.mill`'s header
+pins). Because `build.mill`'s header loads the plugin, **every** `./mill` command needs it:
+`wasm/scripts/publish-dapr4s-wasm.sh` (default `plugin`: only the plugin, needs just git and Java) once
+after cloning; `all` adds the wasm artifacts for `./mill wasm.e2e`. After a release, the header pins a
+Maven Central version and the script goes away. Only state and inbound service invocation are available on
+the Wasm wall so far. Upstream gaps, each worked around in dapr4s and being fixed upstream: no WIT codegen in
+mainline Scala 3 (a small Scala 2.13 glue); the linker cannot pass WIT params through linear memory
+(> 16 flat params: `dapr4s-wasm-linker`, scala-wasm's linker with a patch,
+[scala-wasm#268](https://github.com/scala-wasm/scala-wasm/pull/268)); the linker drops WIT aliases (the
+plugin re-embeds the WIT world, [scala-wasm#269](https://github.com/scala-wasm/scala-wasm/pull/269)); the
+fork's and mainline's core libraries do not evict each other (the exclusions,
+[scala-wasm#271](https://github.com/scala-wasm/scala-wasm/pull/271)); JS interop in the nightly's Scala.js
+stdlib (`dapr4s-wasm-scalalib-overlay`); Mill knows neither the fork's organization nor
+`ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783)) nor WIT bindings
+([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)).
 
-**Prerequisites**: JDK 25, sbt, Docker, the dapr CLI 1.15.1 + daprd 1.17.7 (`dapr init --slim`),
+**Prerequisites**: JDK 25, Docker, the dapr CLI 1.15.1 + daprd 1.17.7 (`dapr init --slim`),
 [wasm-tools](https://github.com/bytecodealliance/wasm-tools) 1.261.0,
 [wasmtime](https://wasmtime.dev) 49.0.2, [wkg](https://github.com/bytecodealliance/wasm-pkg-tools) 0.16.1,
-[wac](https://github.com/bytecodealliance/wac) 0.10.0, `cargo install wit-bindgen-scala --version 0.1.0`,
-python3 and curl.
+[wac](https://github.com/bytecodealliance/wac) 0.10.0, `cargo install wit-bindgen-scala --version 0.1.0`
+(only for publishing the dapr4s wasm artifacts), python3 and curl.
 
 ## Build & test
 
@@ -132,7 +141,7 @@ Since dapr4s 3.0.0 every sidecar error is a subclass of the sealed `dapr4s.DaprE
 `InvokeHttpException`, `DaprApiException`); no SDK exception reaches example code.
 
 ```bash
-./mill __.assembly      # build all assembly JARs
+./mill _.assembly      # build all assembly JARs
 ./mill e2e.testForked   # run the end-to-end suite
 ./mill slides           # render SLIDES.md to a PDF
 ```
@@ -145,7 +154,7 @@ tearing down, flip one flag — `PresentationMode` in
 `e2e/src/e2e/Example14ObservabilityTest.scala` — to `true` and run only that suite:
 
 ```bash
-./mill __.assembly
+./mill _.assembly
 ./mill e2e.testForked e2e.Example14ObservabilityTest
 ```
 

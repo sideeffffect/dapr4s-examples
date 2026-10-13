@@ -1,3 +1,7 @@
+//| mvnDeps: ["com.github.sideeffffect::mill-dapr4s-wasm::3.0.0+25-11e158da-SNAPSHOT"]
+// The dapr4s Mill plugin for WASI components (examples 18/19, `object wasm` below). Pinned to a dapr4s commit
+// (wasm/dapr4s-wasm.env) until it is released: run wasm/scripts/publish-dapr4s-wasm.sh once before the first
+// `./mill` (it publishLocal's the plugin from that commit; `all` also the wasm artifacts the components need).
 package build
 
 import mill.*
@@ -7,6 +11,7 @@ import mill.javalib.*
 import mill.scalajslib.*
 import mill.scalajslib.api.*
 import coursier.maven.MavenRepository
+import dapr4s.millwasm.*
 
 private val NightliesRepo = MavenRepository(
   "https://repo.scala-lang.org/artifactory/maven-nightlies",
@@ -138,9 +143,9 @@ val ScalaJSVersion = "1.22.0"
 
 // Scala.js 1.22 links `js.async`/`js.await` on WebAssembly only when JSPI is switched on
 // explicitly. Without it, linking dapr4s fails with "Uses an async block without JSPI support
-// in WebAssembly". Mill >= 1.3.0 exposes the switch as `scalaJSUseWebAssemblyJSPI` (the sbt
-// equivalent is `withWasmFeatures(_.withUseJSPI(true))`). The 1.22 Wasm backend also requires
-// ES2022 output.
+// in WebAssembly". Mill >= 1.3.0 exposes the switch as `scalaJSUseWebAssemblyJSPI` (the linker
+// config's `withWasmFeatures(_.withUseJSPI(true))`). The 1.22 Wasm backend also requires ES2022
+// output.
 trait JsBaseModule extends BaseModule with ScalaJSModule:
   def scalaJSVersion = ScalaJSVersion
   override def scalaJSExperimentalUseWebAssembly = true
@@ -348,35 +353,76 @@ object e2e extends BaseModule with TestModule.Munit:
   }
 
 // ── WASI-component examples (18 / 19) ─────────────────────────────────────────
-// The Wasm examples live in a SEPARATE sbt build under wasm/ (the scala-wasm fork of
-// Scala.js — `ModuleKind.WasmComponent`, WIT bindings — exists only as an sbt plugin, and it
-// is a fork of sbt-scalajs that cannot share a build with examples 15-17's mainline Scala.js).
-// Mill stays the entry point: these commands just shell out to wasm/scripts/*.sh, which run
-// sbt, wkg, wasm-tools, the upstream compose.sh, wasmtime and the dapr CLI. Nothing here is
-// cached by Mill (Task.Command); the sbt build has its own incremental state in wasm/target.
+// The same pure modules as the JVM examples (01-hello-state, 04-service-invocation), compiled by the
+// same Scala 3 nightly with the same flags for the `wasm` platform, plus a Wasm "shell" per example that
+// turns the pure code into a WASI component for dapr-wasm-components 0.7.2:
 //
-//   ./mill wasm.publishDapr4s   publishLocal the pinned dapr4s wasm layer (wasm/dapr4s-wasm.env)
-//   ./mill wasm.build           build the components -> wasm/target/components/*.wasm
-//   ./mill wasm.e2e             all of the above + 04's JVM caller, then wasm/scripts/e2e.sh
-// See README.md "WASI-component examples (18 / 19)" for the tools they need.
-object wasm extends Module:
-  private def script(name: String, env: Map[String, String] = Map.empty): Unit =
-    os.proc("bash", moduleDir / "scripts" / name)
-      .call(cwd = moduleDir, env = env, stdout = os.Inherit, stderr = os.Inherit)
+//   wasm.18-hello-state-shell          01's HelloStateApp.run behind an invoke route `run`
+//   wasm.19-service-invocation-shell   04's CalleeApp.app (greeting-service), called by 04's JVM caller
+//
+// All the build logic comes from dapr4s's Mill plugin `mill-dapr4s-wasm` (the header of this file): the
+// scala-wasm fork of Scala.js, the patched linker, the stdlib overlay, the dependency exclusions, the WIT
+// trampolines, `wkg wit fetch` and the component task `dapr4sComponent`. A component is
+// `extends Dapr4sWasmComponentModule` + ONE dependency (`dapr4s-wasm`) + the fixed-name
+// `dapr4s.wasm.ComponentRoot`; no workaround lives in this build. The plugin swaps the Scala.js organization
+// only in the modules that mix it in, so 15-17 keep mainline Scala.js.
+//
+// Classpath: Maven Central dapr4s (dapr4s_sjs1_3 $Dapr4sVersion, Scala.js IR linked into the component) + the
+// dapr4s wasm artifacts at the plugin's version. They come from a publishLocal of the dapr4s commit pinned in
+// wasm/dapr4s-wasm.env (wasm/scripts/publish-dapr4s-wasm.sh; CI runs it) until they are released.
+//
+//   ./mill show wasm.18-hello-state-shell.dapr4sComponent   build one component, print its path
+//   ./mill wasm.e2e                                          both components + 04's JVM caller, then
+//                                                            wasm/scripts/e2e.sh (needs the tools in README.md)
+//
+// `wasm` is itself the WitModule of the shared WIT files: wasm/wit/world.wit, wasm/wkg-config.toml, wasm/wkg.lock.
+object wasm extends Module with WitModule:
 
-  def publishDapr4s(): Command[Unit] = Task.Command(exclusive = true) {
-    script("publish-dapr4s-wasm.sh")
-  }
+  trait WasmBase extends Dapr4sWasmModule:
+    override def jvmWorker = ModuleRef(nightliesJvmWorker)
+    def scalaVersion = ScalaVersion
+    override def repositoriesTask = Task.Anon {
+      super.repositoriesTask() ++ Seq(NightliesRepo)
+    }
 
-  def build(): Command[Unit] = Task.Command(exclusive = true) {
-    script("publish-dapr4s-wasm.sh")
-    script("build.sh")
-  }
+  // A pure module of the JVM build, recompiled for the wasm platform against dapr4s core only (Central
+  // dapr4s_sjs1_3, the same artifact the JS examples use), never against the wasm adapters.
+  trait PureWasmModule extends WasmBase:
+    override def scalacOptions = Seq("-experimental", "-language:experimental.safe")
+    override def mvnDeps = Seq(mvn"com.github.sideeffffect::dapr4s::$Dapr4sVersion")
+    override def sources = Task.Sources(moduleDir / os.up / os.up / moduleDir.last / "src")
 
+  // A Wasm shell: the component. Same codec library (and version) as the JVM shells; its mainline Scala.js
+  // dependencies are dropped by the plugin's exclusions.
+  trait ComponentShell extends WasmBase with Dapr4sWasmComponentModule:
+    override def scalacOptions = Seq("-experimental")
+    override def mvnDeps = Seq(
+      mvn"com.github.sideeffffect::dapr4s-wasm::$dapr4sWasmVersion",
+      mvn"com.lihaoyi::upickle::3.3.1",
+    )
+    // One `wkg wit fetch` for both components.
+    override def wit = Task(wasm.wit())
+
+  object `01-hello-state` extends PureWasmModule
+  object `04-service-invocation` extends PureWasmModule
+
+  object `18-hello-state-shell` extends ComponentShell:
+    override def moduleDeps = Seq(`01-hello-state`)
+  object `19-service-invocation-shell` extends ComponentShell:
+    override def moduleDeps = Seq(`04-service-invocation`)
+
+  // Builds both components and 04's JVM caller (dapr4s 3.0.0 from Maven Central), then runs
+  // wasm/scripts/e2e.sh on them in this command's out/ directory (logs: out/wasm/e2e.dest/logs).
   def e2e(): Command[Unit] = Task.Command(exclusive = true) {
-    // 04's JVM caller (dapr4s 3.0.0 from Maven Central) drives the Wasm greeting-service.
     val callerJar = `04-service-invocation-shell`.assembly().path
-    script("publish-dapr4s-wasm.sh")
-    script("build.sh")
-    script("e2e.sh", Map("CALLER_JAR" -> callerJar.toString))
+    val components = Task.dest / "components"
+    os.makeDir.all(components)
+    os.copy.over(`18-hello-state-shell`.dapr4sComponent().path, components / "18-hello-state-shell.wasm")
+    os.copy.over(`19-service-invocation-shell`.dapr4sComponent().path, components / "19-service-invocation-shell.wasm")
+    os.proc("bash", moduleDir / "scripts" / "e2e.sh").call(
+      cwd = moduleDir,
+      env = Map("CALLER_JAR" -> callerJar.toString, "E2E_WORK" -> Task.dest.toString),
+      stdout = os.Inherit,
+      stderr = os.Inherit,
+    )
   }

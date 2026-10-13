@@ -31,6 +31,9 @@ jobs:
             mill-${{ hashFiles('.mill-version', 'build.mill') }}-
             mill-
 
+      # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
+      - uses: ./.github/actions/dapr4s-mill-plugin
+
       # checkFormatAll reads .scalafmt.conf and honours its project.excludeFilters,
       # so the experimental capture-checking `^{...}` files scalafmt can't parse are
       # skipped. Fails (exit 1) on any misformatted, non-excluded source.
@@ -83,6 +86,9 @@ jobs:
       # are slow and hit Docker Hub's anonymous rate limit. We cache `docker save`
       # tarballs of the exact image set, keyed by a hash of that set, and `docker load`
       # them on a hit — so each image is fetched from a registry at most once per set.
+      # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
+      - uses: ./.github/actions/dapr4s-mill-plugin
+
       - name: Compute image set
         id: imageset
         run: |
@@ -126,7 +132,8 @@ jobs:
       # longer force-builds every example — see build.mill forkArgs).
       - name: Build assembly JARs (core — all)
         if: matrix.suite == 'core'
-        run: ./mill __.assembly
+        # `_` = the top-level modules: the JVM shells (and the e2e/JS modules, as before), not the wasm.* ones.
+        run: ./mill _.assembly
 
       - name: Build assembly JARs (observability — example 14 only)
         if: matrix.suite == 'observability'
@@ -200,6 +207,9 @@ jobs:
             mill-js-${{ hashFiles('.mill-version', 'build.mill') }}-
             mill-js-
 
+      # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
+      - uses: ./.github/actions/dapr4s-mill-plugin
+
       # JSPI is on by default from Node 25; the linked Wasm bundles suspend on it.
       - name: Set up Node 25
         uses: actions/setup-node@v5
@@ -212,11 +222,12 @@ jobs:
         working-directory: e2e/js
 
       # Link every Scala.js module to a Wasm ES-module bundle (out/<shell>/fastLinkJS.dest).
-      # The `__.fastLinkJS` wildcard runs the task on all JS modules in one resolution — do NOT
+      # The `_.fastLinkJS` wildcard runs the task on all top-level JS modules in one resolution (`_`, not
+      # `__`: the wasm.* modules are components, built by `./mill wasm.e2e`) — do NOT
       # list them as `./mill a.fastLinkJS b.fastLinkJS …`: Mill parses the trailing tokens as
       # ARGUMENTS to the first task, so only the first bundle would be linked.
       - name: Link Scala.js example bundles (Wasm)
-        run: ./mill __.fastLinkJS
+        run: ./mill _.fastLinkJS
 
       # The `*Js*` glob selects exactly the three Scala.js suites (Example15/16/17…JsTest).
       - name: Run Scala.js E2E tests (examples 15/16/17)
@@ -231,14 +242,12 @@ jobs:
           if-no-files-found: ignore
 
   # ── WASI-component examples (18/19) ───────────────────────────────────────────
-  # The Wasm examples are a separate sbt build (wasm/) driven by `./mill wasm.e2e`: the scala-wasm fork
-  # of Scala.js (`ModuleKind.WasmComponent`) exists only as an sbt plugin and cannot share a build with
-  # 15-17's mainline Scala.js. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the small
-  # dapr4s wasm artifacts (dapr4s-wasm, dapr4s-wasm-glue(-exports), dapr4s-wasm-scalalib-overlay, dapr4s-wasm-linker,
-  # sbt-dapr4s-wasm) are not on Central yet, so this job publishLocal's them from the dapr4s commit PINNED in
-  # wasm/dapr4s-wasm.env (a commit of dapr4s PR #44,
-  # https://github.com/sideeffffect/dapr4s/pull/44). Once that is merged and released, the pin becomes a
-  # release version and the dapr4s build steps below go away.
+  # The Wasm examples (18/19) are Mill modules of this build (`object wasm` in build.mill), built with dapr4s's
+  # Mill plugin mill-dapr4s-wasm. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the plugin and the
+  # small dapr4s wasm artifacts (dapr4s-wasm, dapr4s-wasm-glue(-exports), dapr4s-wasm-scalalib-overlay,
+  # dapr4s-wasm-linker) come from a publishLocal of the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of
+  # https://github.com/sideeffffect/dapr4s/pull/45). Once they are released, the pin becomes a release version and
+  # the dapr4s publish step goes away.
   # The components are composed with dapr-wasm-components 0.7.2 (compose.sh at the v0.7.2 tag) and run
   # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
   # real output, including 04's unchanged JVM caller calling the Wasm greeting-service.
@@ -256,22 +265,19 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - uses: sbt/setup-sbt@v1
-
       - name: Read the dapr4s pin (wasm/dapr4s-wasm.env)
         run: grep -E '^[A-Z0-9_]+=' wasm/dapr4s-wasm.env >> "$GITHUB_ENV"
 
-      - name: Cache Mill, Coursier and sbt
+      - name: Cache Mill and Coursier
         uses: actions/cache@v5
         with:
           path: |
             ~/.cache/coursier
             ~/.cache/mill
-            ~/.sbt
             out
-          key: mill-wasm-${{ hashFiles('.mill-version', 'build.mill', 'wasm/build.sbt', 'wasm/project/*') }}-${{ hashFiles('**/*.scala') }}
+          key: mill-wasm-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
           restore-keys: |
-            mill-wasm-${{ hashFiles('.mill-version', 'build.mill', 'wasm/build.sbt', 'wasm/project/*') }}-
+            mill-wasm-${{ hashFiles('.mill-version', 'build.mill') }}-
             mill-wasm-
 
       # Same tool versions as dapr4s's own wasm CI leg.
@@ -296,7 +302,7 @@ jobs:
           chmod +x "$bin/wkg" "$bin/wac"
           "$bin/wasm-tools" --version; "$bin/wasmtime" --version; "$bin/wkg" --version; "$bin/wac" --version
 
-      # The scala-wasm sbt plugin runs `wit-bindgen-scala` (crate 0.1.0) when dapr4s's wasm layer is built.
+      # dapr4s's build runs `wit-bindgen-scala` (crate 0.1.0) when its wasm artifacts are published.
       - name: Cache wit-bindgen-scala
         id: cache-wbs
         uses: actions/cache@v5
@@ -313,15 +319,19 @@ jobs:
           dapr init --slim --runtime-version 1.17.7
           echo "$HOME/.dapr/bin" >> "$GITHUB_PATH"
 
-      # The six dapr4s wasm artifacts (incl. dapr4s-wasm-linker, built from scala-wasm's release commit + dapr4s's
-      # patch) land in ~/.ivy2/local and are a pure function of the pinned dapr4s commit: cache them under it. On a
-      # miss, `./mill wasm.e2e` (via wasm/scripts/publish-dapr4s-wasm.sh) clones dapr4s at that commit and runs its
-      # wasm `publishLocal`.
-      - name: Cache the dapr4s wasm artifacts (~/.ivy2/local)
+      # The plugin + the five dapr4s wasm artifacts (incl. dapr4s-wasm-linker, compiled from scala-wasm's release
+      # commit + dapr4s's patch) land in ~/.ivy2/local and are a pure function of the pinned dapr4s commit: cache
+      # them under it. On a miss, wasm/scripts/publish-dapr4s-wasm.sh clones dapr4s at that commit and runs its
+      # Mill publishLocal. It must run before the first ./mill here (build.mill's header loads the plugin).
+      - name: Cache the dapr4s plugin + wasm artifacts (~/.ivy2/local)
+        id: cache-dapr4s
         uses: actions/cache@v5
         with:
           path: ~/.ivy2/local/com.github.sideeffffect
-          key: dapr4s-wasm-artifacts-${{ env.DAPR4S_COMMIT }}-${{ env.DAPR4S_CORE_RELEASE }}
+          key: dapr4s-wasm-mill-artifacts-${{ env.DAPR4S_COMMIT }}-${{ env.DAPR4S_CORE_RELEASE }}
+      - name: Publish the dapr4s plugin + wasm artifacts locally (cache miss)
+        if: steps.cache-dapr4s.outputs.cache-hit != 'true'
+        run: wasm/scripts/publish-dapr4s-wasm.sh all
 
       - name: Build + run the WASI-component e2e (./mill wasm.e2e)
         timeout-minutes: 30
@@ -332,7 +342,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: test-results-wasm
-          path: wasm/target/e2e/
+          path: out/wasm/e2e.dest/logs/
           if-no-files-found: ignore
 
   slides:
@@ -347,6 +357,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+
+      # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
+      - uses: ./.github/actions/dapr4s-mill-plugin
 
       - name: Set up Node
         uses: actions/setup-node@v5

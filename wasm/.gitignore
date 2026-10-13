@@ -1,6 +1,0 @@
-# Written by `wkg wit fetch` from OCI and pinned by wkg.lock. Never commit it:
-# WIT reaches this build only through OCI packaging.
-wit/deps/
-target/
-project/target/
-project/project/

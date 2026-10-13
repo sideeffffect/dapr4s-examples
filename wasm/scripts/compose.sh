@@ -4,11 +4,10 @@
 #   wasm/scripts/compose.sh <app.wasm> <composed.wasm>
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-wasm="$(cd "$here/.." && pwd)"
 app="$1"
 out="$2"
 ref="v0.7.2"
-dir="$wasm/target/dapr-wasm-components-$ref"
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/dapr4s-examples/dapr-wasm-components-$ref"
 mkdir -p "$dir"
 for f in compose.sh compose.wac; do
   [[ -s "$dir/$f" ]] || curl -fsSL --retry 3 -o "$dir/$f" \
