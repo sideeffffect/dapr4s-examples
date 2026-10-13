@@ -234,8 +234,9 @@ jobs:
   # The Wasm examples are a separate sbt build (wasm/) driven by `./mill wasm.e2e`: the scala-wasm fork
   # of Scala.js (`ModuleKind.WasmComponent`) exists only as an sbt plugin and cannot share a build with
   # 15-17's mainline Scala.js. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the small
-  # dapr4s wasm layer (wall + 2.13 WIT glue `dapr4s-wasm-glue` + sbt-dapr4s-wasm plugin) is not on Central yet, so this job
-  # publishLocal's it from the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of dapr4s PR #44,
+  # dapr4s wasm artifacts (dapr4s-wasm, dapr4s-wasm-glue(-exports), dapr4s-wasm-scalalib-overlay, dapr4s-wasm-linker,
+  # sbt-dapr4s-wasm) are not on Central yet, so this job publishLocal's them from the dapr4s commit PINNED in
+  # wasm/dapr4s-wasm.env (a commit of dapr4s PR #44,
   # https://github.com/sideeffffect/dapr4s/pull/44). Once that is merged and released, the pin becomes a
   # release version and the dapr4s build steps below go away.
   # The components are composed with dapr-wasm-components 0.7.1 (compose.sh at the v0.7.1 tag) and run
@@ -312,16 +313,15 @@ jobs:
           dapr init --slim --runtime-version 1.17.7
           echo "$HOME/.dapr/bin" >> "$GITHUB_PATH"
 
-      # The patched scala-wasm linker and the dapr4s wasm layer both land in ~/.ivy2/local and are a pure
-      # function of the pinned dapr4s commit: cache them under it. On a miss, `./mill wasm.e2e` (via
-      # wasm/scripts/publish-dapr4s-wasm.sh) clones dapr4s at that commit, builds the linker and publishes.
-      - name: Cache the patched linker + dapr4s wasm layer (~/.ivy2/local)
+      # The six dapr4s wasm artifacts (incl. dapr4s-wasm-linker, built from scala-wasm's release commit + dapr4s's
+      # patch) land in ~/.ivy2/local and are a pure function of the pinned dapr4s commit: cache them under it. On a
+      # miss, `./mill wasm.e2e` (via wasm/scripts/publish-dapr4s-wasm.sh) clones dapr4s at that commit and runs its
+      # wasm `publishLocal`.
+      - name: Cache the dapr4s wasm artifacts (~/.ivy2/local)
         uses: actions/cache@v5
         with:
-          path: |
-            ~/.ivy2/local/io.github.scala-wasm
-            ~/.ivy2/local/com.github.sideeffffect
-          key: dapr4s-wasm-layer-${{ env.DAPR4S_COMMIT }}-${{ env.DAPR4S_CORE_RELEASE }}
+          path: ~/.ivy2/local/com.github.sideeffffect
+          key: dapr4s-wasm-artifacts-${{ env.DAPR4S_COMMIT }}-${{ env.DAPR4S_CORE_RELEASE }}
 
       - name: Build + run the WASI-component e2e (./mill wasm.e2e)
         timeout-minutes: 30

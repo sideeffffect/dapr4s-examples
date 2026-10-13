@@ -411,15 +411,17 @@ real daprd:
   `PureModule`, against the shared dapr4s API only. The pure modules expose a `StateCapability.Instance`-only
   entry (`HelloStateApp.run`, `CalleeApp.app`) because the Wasm wall hands a component only state;
   the JVM `apply()`s just open that instance and delegate. Keep it that way when editing 01/04.
-- **Classpath = Maven Central dapr4s + a small local wasm layer**: `dapr4s_sjs1_3:3.0.0` (Central,
-  Scala.js IR, linked into the component by the scala-wasm linker) + the dapr4s wasm wall, its 2.13
-  WIT bindings/glue and the `sbt-dapr4s-wasm` plugin, which are **not on Central yet**: they come
-  from a `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (a commit of
-  [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44), built in its "release mode" so the
-  layer depends on Central `dapr4s_sjs1_3`). `wasm/scripts/publish-dapr4s-wasm.sh` does the clone,
-  the patched-linker build and the publish, and fails if the published version differs from the pin.
-  **When PR #44 is merged and the layer is released, move the pin to the release version, delete
-  the publish script and its CI steps, and resolve everything from Central.** To bump the pin: set
+- **Classpath = Maven Central dapr4s + the dapr4s wasm artifacts**: `dapr4s_sjs1_3:3.0.0` (Central,
+  Scala.js IR, linked into the component by the scala-wasm linker; the pure modules depend on it
+  directly) + `dapr4s-wasm` (the adapters), `dapr4s-wasm-glue(-exports)`, `dapr4s-wasm-scalalib-overlay`,
+  `dapr4s-wasm-linker` and the `sbt-dapr4s-wasm` plugin, which are **not on Central yet** (dapr4s
+  wires their publishing but keeps it off): they come from a `publishLocal` of the dapr4s commit
+  pinned in `wasm/dapr4s-wasm.env` (a commit of [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44)).
+  `wasm/scripts/publish-dapr4s-wasm.sh` does the clone and the publish (the patched linker is built
+  on the way) and fails if the published version differs from the pin. **No workaround lives in this
+  build**: a component is the plugin + `enablePlugins(Dapr4sWasmComponentPlugin)` + one dependency
+  (`dapr4s-wasm`) + `ComponentRoot`. **When the wasm artifacts are released, move the pin to the release
+  version, delete the publish script and its CI steps, and resolve everything from Central.** To bump the pin: set
   `DAPR4S_COMMIT` + `DAPR4S_WASM_VERSION` (the sbt-dynver version of that commit,
   `<tag>+<n>-<sha8>-SNAPSHOT`) together.
 - **The component contract** (what a shell writes): `object X extends dapr4s.wasm.DaprComponent`
@@ -442,9 +444,10 @@ real daprd:
   (`dapr init --slim`), wasm-tools 1.261.0, wasmtime 49.0.2, wkg 0.16.1, wac 0.10.0,
   wit-bindgen-scala 0.1.0 (`cargo install`), python3, curl.
 - **Upstream scala-wasm blockers** (worked around in dapr4s, see its AGENTS.md "Wasm component layer
-  rules"): no WIT codegen in mainline Scala 3 (2.13 glue), linker cannot read export params from
-  linear memory (patched linker built from source), linker drops WIT aliases (WIT re-embed), nightly
-  stdlib uses JS interop (`.sjsir` overlay), no `main` in a reactor (`ComponentRoot`).
+  rules"; never send PRs/issues to scala/* or scala-wasm/*): no WIT codegen in mainline Scala 3 (2.13
+  glue), the linker cannot pass params through linear memory (> 16 flat params, both directions:
+  `dapr4s-wasm-linker`), linker drops WIT aliases (WIT re-embed), nightly stdlib uses JS interop
+  (`dapr4s-wasm-scalalib-overlay`), no `main` in a reactor (`ComponentRoot`).
 
 > The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
 > SigNoz by asserting the funnel collector's own pipeline counters

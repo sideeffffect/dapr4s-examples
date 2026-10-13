@@ -13,9 +13,11 @@
 // live in a build that also uses mainline Scala.js (examples 15-17). dapr4s keeps its wasm build
 // apart for the same reason.
 //
-// Classpath: Maven Central dapr4s (dapr4s_sjs1_3, Scala.js IR) + the small dapr4s wasm layer from a
-// publishLocal of a pinned dapr4s commit (dapr4s-wasm.env). The plugin (project/plugins.sbt)
-// provides `dapr4sWasmVersion`, `dapr4sWasmGlueExports`, `Dapr4sWasmPlugin`, `Dapr4sWasmComponentPlugin`.
+// Classpath: Maven Central dapr4s (dapr4s_sjs1_3, Scala.js IR) + the dapr4s wasm artifacts from a
+// publishLocal of a pinned dapr4s commit (dapr4s-wasm.env). The sbt-dapr4s-wasm plugin
+// (project/plugins.sbt) does all the rest: a component is `enablePlugins(Dapr4sWasmComponentPlugin)`
+// + ONE dependency (`dapr4s-wasm`) + the fixed-name `dapr4s.wasm.ComponentRoot`; no workaround lives
+// in this build.
 // =================================================================================================
 
 val repoDir = file("..").getAbsoluteFile.getCanonicalFile
@@ -35,6 +37,12 @@ ThisBuild / scalafmtConfig := repoDir / ".scalafmt.conf"
 val shellFlags = Seq("-experimental")
 val pureFlags = shellFlags :+ "-language:experimental.safe"
 
+// The dapr4s core release the wasm artifacts were built against (dapr4s-wasm.env): the pure modules use it.
+val coreRelease: String =
+  IO.readLines(file("dapr4s-wasm.env").getAbsoluteFile)
+    .collectFirst { case l if l.startsWith("DAPR4S_CORE_RELEASE=") => l.stripPrefix("DAPR4S_CORE_RELEASE=").trim }
+    .getOrElse(sys.error("dapr4s-wasm.env has no DAPR4S_CORE_RELEASE"))
+
 // Same codec library (and version) as the JVM shells. Its mainline Scala.js dependencies are dropped
 // by Dapr4sWasmPlugin's exclusions; the rest links fine on a Wasm-only module kind.
 val upickle = Def.setting("com.lihaoyi" %%% "upickle" % "3.3.1")
@@ -44,21 +52,20 @@ def srcOnly(dir: File) = Seq(
   Test / unmanagedSourceDirectories := Nil,
 )
 
-// A pure module of the Mill build, recompiled for the wasm platform against the shared dapr4s API only
-// (dapr4s-wasm-core: Central dapr4s_sjs1_3 + DaprComponent) — never against the wall.
+// A pure module of the Mill build, recompiled for the wasm platform against dapr4s core only (Central
+// dapr4s_sjs1_3, the same artifact the JS examples use) — never against the wasm adapters.
 def pureModule(dir: String) = Seq(
   name := dir,
   scalacOptions ++= pureFlags,
-  libraryDependencies += "com.github.sideeffffect" %%% "dapr4s-wasm-core" % dapr4sWasmVersion,
+  libraryDependencies += "com.github.sideeffffect" %%% "dapr4s" % coreRelease,
 ) ++ srcOnly(repoDir / dir / "src")
 
-// A Wasm shell: the component. `componentWasm` writes target/components/<dir>.wasm.
+// A Wasm shell: the component. `dapr4sComponent` writes target/components/<dir>.wasm.
 def componentShell(dir: String) = Seq(
   name := dir,
   scalacOptions ++= shellFlags,
   libraryDependencies ++= Seq(
     "com.github.sideeffffect" %%% "dapr4s-wasm" % dapr4sWasmVersion,
-    dapr4sWasmGlueExports(dapr4sWasmVersion),
     upickle.value,
   ),
 ) ++ srcOnly(file(dir).getAbsoluteFile / "src")

@@ -73,14 +73,13 @@ real daprd + Redis. In 19, example 04's JVM `caller` (dapr4s on the JVM) calls t
 greeting-service through daprd, exactly as it calls the JVM one.
 
 ```bash
-./mill wasm.e2e    # publishLocal the dapr4s wasm layer, build both components, run the e2e
+./mill wasm.e2e    # publishLocal the dapr4s wasm artifacts, build both components, run the e2e
 ```
 
 What `./mill wasm.e2e` does (each step is a script in `wasm/scripts/`, usable on its own):
 
-1. `publish-dapr4s-wasm.sh` — clones dapr4s at the commit pinned in `wasm/dapr4s-wasm.env`, builds
-   the patched scala-wasm linker and `publishLocal`s the dapr4s wasm layer + `sbt-dapr4s-wasm` plugin
-   (skipped when already in `~/.ivy2/local`);
+1. `publish-dapr4s-wasm.sh` — clones dapr4s at the commit pinned in `wasm/dapr4s-wasm.env` and
+   `publishLocal`s its six wasm artifacts (skipped when already in `~/.ivy2/local`);
 2. `build.sh` — `sbt` in `wasm/`: format check, link, and re-embed the WIT world →
    `wasm/target/components/{18-hello-state-shell,19-service-invocation-shell}.wasm`;
 3. `e2e.sh` — compose (dapr-wasm-components `compose.sh` at the `v0.7.1` tag), `dapr run … --
@@ -90,15 +89,31 @@ What `./mill wasm.e2e` does (each step is a script in `wasm/scripts/`, usable on
 sbt-scalajs, so it cannot live in the same build as examples 15–17 (mainline Scala.js). Mill stays
 the entry point and simply shells out to sbt (and to wkg, wasm-tools, wasmtime, the dapr CLI).
 
-**Prototype status.** dapr4s itself comes from Maven Central (`dapr4s_sjs1_3` 3.0.0, linked into the
-component). The small Wasm layer on top (wall + Scala 2.13 WIT glue + sbt plugin) is still in
-[dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44) and not on Central, hence the
-`publishLocal` of a pinned commit; after that PR is released, it becomes an ordinary dependency.
-Only state and inbound service invocation are available on the Wasm wall so far. Upstream scala-wasm
-blockers, each worked around in dapr4s: no WIT codegen in mainline Scala 3 (a small Scala 2.13 glue),
-a linker `???` for exports with more than 16 flat params (a patched linker built from source), the
-linker dropping WIT aliases (the WIT world is re-embedded with `wasm-tools`), and JS interop in the
-nightly's Scala.js stdlib (a `.sjsir` overlay).
+**What a component needs.** The `sbt-dapr4s-wasm` plugin, one dependency and one fixed-name object —
+nothing else in the build (`wasm/project/plugins.sbt`, `wasm/build.sbt`):
+
+```scala
+// project/plugins.sbt
+addSbtPlugin("com.github.sideeffffect" % "sbt-dapr4s-wasm" % dapr4sWasmVersion)
+// build.sbt (+ wit/world.wit, wkg-config.toml, wkg.lock)
+lazy val app = project
+  .enablePlugins(Dapr4sWasmComponentPlugin)
+  .settings(libraryDependencies += "com.github.sideeffffect" %%% "dapr4s-wasm" % dapr4sWasmVersion)
+// src: object dapr4s.wasm.ComponentRoot { def component: DaprComponent = MyComponent }
+```
+
+The dapr4s wasm artifacts: `dapr4s-wasm` (the adapters; depends on dapr4s core, here the published
+`dapr4s_sjs1_3` 3.0.0, whose Scala.js IR is linked into the component), `dapr4s-wasm-glue` (+ `-exports`;
+the Scala 2.13 WIT glue), `dapr4s-wasm-scalalib-overlay`, `dapr4s-wasm-linker` and the plugin.
+
+**Prototype status.** Those artifacts are in [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44),
+with Central publishing wired but switched off, hence the `publishLocal` of a pinned commit; after a
+release they become ordinary Maven Central dependencies. Only state and inbound service invocation are
+available on the Wasm wall so far. Upstream scala-wasm gaps, each worked around in dapr4s (nothing is
+sent upstream): no WIT codegen in mainline Scala 3 (a small Scala 2.13 glue); the linker cannot pass
+WIT params through linear memory (> 16 flat params, exports and imports: `dapr4s-wasm-linker`, scala-wasm's
+linker with a patch); the linker drops WIT aliases (the plugin re-embeds the WIT world); JS interop in the
+nightly's Scala.js stdlib (`dapr4s-wasm-scalalib-overlay`).
 
 **Prerequisites**: JDK 25, sbt, Docker, the dapr CLI 1.15.1 + daprd 1.17.7 (`dapr init --slim`),
 [wasm-tools](https://github.com/bytecodealliance/wasm-tools) 1.261.0,

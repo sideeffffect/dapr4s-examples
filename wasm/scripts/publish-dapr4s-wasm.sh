@@ -2,11 +2,11 @@
 # Publish the dapr4s Wasm-component layer to ~/.ivy2/local from the commit pinned in wasm/dapr4s-wasm.env:
 #   1. clone/fetch dapr4s into $DAPR4S_DIR (default: wasm/target/dapr4s) at DAPR4S_COMMIT (full history: the
 #      sbt-dynver version needs the tags);
-#   2. build the patched scala-wasm linker (dapr4s scripts/wasm/build-patched-linker.sh; idempotent);
-#   3. `sbt -Ddapr4s.wasm.coreRelease=$DAPR4S_CORE_RELEASE publishLocal` in dapr4s/wasm (RELEASE mode: the layer
-#      depends on Maven Central dapr4s_sjs1_3:$DAPR4S_CORE_RELEASE, not on dapr4s's sources);
-#   4. check that the published version is DAPR4S_WASM_VERSION (what wasm/project/plugins.sbt resolves).
-# Idempotent: skips 1-3 when that version is already in ~/.ivy2/local (FORCE=1 republishes).
+#   2. `sbt -Ddapr4s.wasm.core=$DAPR4S_CORE_RELEASE publishLocal` in dapr4s/wasm: the six wasm artifacts (the
+#      adapters depend on Maven Central dapr4s_sjs1_3:$DAPR4S_CORE_RELEASE, not on dapr4s's sources; the patched
+#      linker is built from scala-wasm's release commit + dapr4s's patch on the way);
+#   3. check that the published version is DAPR4S_WASM_VERSION (what wasm/project/plugins.sbt resolves).
+# Idempotent: skips 1-2 when that version is already in ~/.ivy2/local (FORCE=1 republishes).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 wasm="$(cd "$here/.." && pwd)"
@@ -23,12 +23,12 @@ if [[ ! -d "$dir/.git" ]]; then
 fi
 git -C "$dir" fetch --quiet --tags origin "$DAPR4S_COMMIT" 2>/dev/null || git -C "$dir" fetch --quiet --tags origin
 git -C "$dir" checkout --quiet --force "$DAPR4S_COMMIT"
-"$dir/scripts/wasm/build-patched-linker.sh"
-(cd "$dir/wasm" && sbt -batch -no-colors -Ddapr4s.wasm.coreRelease="$DAPR4S_CORE_RELEASE" publishLocal)
+# (dapr4s-wasm-linker is part of that publishLocal: the build runs scripts/wasm/build-patched-linker.sh itself.)
+(cd "$dir/wasm" && sbt -batch -no-colors -Ddapr4s.wasm.core="$DAPR4S_CORE_RELEASE" publishLocal)
 # The version is sbt-dynver's for that commit; it must be the one wasm/project/plugins.sbt resolves.
 if [[ ! -d "$ivy/dapr4s-wasm_sjs1_3/$DAPR4S_WASM_VERSION" || ! -d "$ivy/sbt-dapr4s-wasm/scala_2.12/sbt_1.0/$DAPR4S_WASM_VERSION" ]]; then
   echo "publish-dapr4s-wasm.sh: dapr4s $DAPR4S_COMMIT did not publish $DAPR4S_WASM_VERSION (pinned in dapr4s-wasm.env); found:" >&2
   ls "$ivy/dapr4s-wasm_sjs1_3" >&2 || true
   exit 1
 fi
-echo "publish-dapr4s-wasm.sh: published the dapr4s wasm layer $DAPR4S_WASM_VERSION (on dapr4s_sjs1_3 $DAPR4S_CORE_RELEASE)"
+echo "publish-dapr4s-wasm.sh: published the dapr4s wasm artifacts $DAPR4S_WASM_VERSION (on dapr4s_sjs1_3 $DAPR4S_CORE_RELEASE)"

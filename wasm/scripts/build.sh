@@ -5,4 +5,4 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$here/.."
-sbt -batch ${SBT_ARGS:-} scalafmtCheckAll scalafmtSbtCheck helloStateShell/componentWasm serviceInvocationShell/componentWasm
+sbt -batch ${SBT_ARGS:-} scalafmtCheckAll scalafmtSbtCheck helloStateShell/dapr4sComponent serviceInvocationShell/dapr4sComponent

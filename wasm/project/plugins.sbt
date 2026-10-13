@@ -1,5 +1,6 @@
-// sbt-dapr4s-wasm: the build logic every dapr4s WASI-component app needs (the patched scala-wasm linker, the stdlib
-// overlay, dependency exclusions, `ModuleKind.WasmComponent` + re-embedding the real WIT world). It brings the
+// sbt-dapr4s-wasm: the build logic every dapr4s WASI-component app needs (it links with dapr4s-wasm-linker, puts the
+// stdlib overlay first, adds the WIT trampolines, excludes mainline Scala.js library/javalib, runs `wkg wit fetch`, and
+// `dapr4sComponent` re-embeds the real WIT world). It brings the
 // scala-wasm FORK of sbt-scalajs, which is why this is a separate sbt build next to the Mill one (see ../AGENTS.md
 // "WASI-component examples"). Its version is pinned in ../dapr4s-wasm.env (DAPR4S_WASM_VERSION env var overrides).
 val dapr4sWasmVersion: String = sys.env
