@@ -69,9 +69,12 @@ start() {
     --resources-path "$wasm/components" -- \
     wasmtime serve -S cli --addr "127.0.0.1:$app_port" --env "DAPR_HTTP_PORT=$http" \
     "$components/composed-$c.wasm" >"$logs/run-$c.log" 2>&1 &
+  # The dapr CLI prints "up and running" once daprd is up, which can be before `wasmtime serve` listens
+  # (daprd then answers ERR_DIRECT_INVOKE "connection refused"); so also wait for the app port to accept.
   local up=0
   for _ in $(seq 1 90); do
-    grep -q "up and running" "$logs/run-$c.log" && { up=1; break; }
+    grep -q "up and running" "$logs/run-$c.log" && (exec 3<>"/dev/tcp/127.0.0.1/$app_port") 2>/dev/null &&
+      { up=1; break; }
     sleep 1
   done
   [[ "$up" == 1 ]] || fail "$c: daprd + wasmtime serve did not come up"
