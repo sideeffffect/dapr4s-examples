@@ -3,8 +3,8 @@ name: E2E Tests
 on:
   push:
     branches: [main, master]
+  # Every pull request, also those stacked on another PR's branch.
   pull_request:
-    branches: [main, master]
 
 jobs:
   format:
