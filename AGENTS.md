@@ -120,8 +120,11 @@ Source files live under `src/<package>/` within each module directory, e.g.:
 - **Dapr CLI** and runtime: https://docs.dapr.io/getting-started/install-dapr-cli/
 - **Redis** on `localhost:6379` — `docker run -d -p 6379:6379 redis:7`
 - **JVM ≥ 21** — `java -version`
-- **Mill 1.3.x** — use the `./mill` launcher (it reads `.mill-version`). Mill >= 1.3.0 is required
-  for the Scala.js JSPI switch (see "Scala.js examples").
+- **Mill 1.3.0-18-28026a (unreleased)** — use the `./mill` launcher (it reads `.mill-version`). It is
+  Mill main + [com-lihaoyi/mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), the Mill the dapr4s
+  plugin is built against. `wasm/scripts/publish-dapr4s-wasm.sh` installs it (it runs dapr4s's
+  `scripts/upstream-snapshot.sh`); without it, run that dapr4s script once yourself. Mill >= 1.3.0 is
+  required for the Scala.js JSPI switch (see "Scala.js examples").
 - **dapr4s published locally** (run once from the dapr4s repo):
   ```
   cd ../scala-safe-dapr
@@ -423,7 +426,7 @@ whole repository is one Mill build.
   directly) + `dapr4s-wasm` (the adapters), `dapr4s-wasm-glue(-exports)`, `dapr4s-wasm-scalalib-overlay`,
   `dapr4s-wasm-linker` and the plugin `mill-dapr4s-wasm`, which are **not released yet**: they come from a
   `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (a commit of
-  [dapr4s PR #45](https://github.com/sideeffffect/dapr4s/pull/45)), at the version `build.mill`'s header pins.
+  [dapr4s PR #47](https://github.com/sideeffffect/dapr4s/pull/47)), at the version `build.mill`'s header pins.
   **Bootstrapping**: the header loads the plugin, so EVERY `./mill` command fails until it is in
   `~/.ivy2/local`. Run `wasm/scripts/publish-dapr4s-wasm.sh` (`plugin`, the default: only the plugin,
   needs git + Java) once after cloning; `all` also publishes the wasm artifacts `./mill wasm.e2e` needs

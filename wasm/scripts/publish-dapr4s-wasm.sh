@@ -33,9 +33,9 @@ artifacts=(mill-dapr4s-wasm_mill1_3)
 case "$what" in
 plugin) ;;
 all)
-  modules+=('wasm.lib[release].wall' wasm.glue wasm.glueExports wasm.scalalibOverlay wasm.linker)
+  modules+=('wasm.lib[release].wall' wasm.glue wasm.glueExports wasm.scalalibOverlay 'wasm.linker[2.13.18]')
   artifacts+=(dapr4s-wasm_sjs1_3 dapr4s-wasm-glue_sjs1_2.13 dapr4s-wasm-glue-exports_sjs1_2.13
-    dapr4s-wasm-scalalib-overlay dapr4s-wasm-linker_2.12)
+    dapr4s-wasm-scalalib-overlay dapr4s-wasm-linker_2.13)
   ;;
 *)
   echo "usage: $0 [plugin|all]" >&2
@@ -58,6 +58,8 @@ if [[ ! -d "$dir/.git" ]]; then
 fi
 git -C "$dir" fetch --quiet --tags origin "$DAPR4S_COMMIT" 2>/dev/null || git -C "$dir" fetch --quiet --tags origin
 git -C "$dir" checkout --quiet --force "$DAPR4S_COMMIT"
+# dapr4s builds with an unreleased Mill + mill-scalablytyped: install them first (idempotent).
+"$dir/scripts/upstream-snapshot.sh"
 args=()
 for m in "${modules[@]}"; do
   [[ ${#args[@]} -gt 0 ]] && args+=(+)

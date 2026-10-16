@@ -9,7 +9,7 @@ on:
 jobs:
   format:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -246,14 +246,14 @@ jobs:
   # Mill plugin mill-dapr4s-wasm. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the plugin and the
   # small dapr4s wasm artifacts (dapr4s-wasm, dapr4s-wasm-glue(-exports), dapr4s-wasm-scalalib-overlay,
   # dapr4s-wasm-linker) come from a publishLocal of the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of
-  # https://github.com/sideeffffect/dapr4s/pull/45). Once they are released, the pin becomes a release version and
+  # https://github.com/sideeffffect/dapr4s/pull/47). Once they are released, the pin becomes a release version and
   # the dapr4s publish step goes away.
   # The components are composed with dapr-wasm-components 0.7.2 (compose.sh at the v0.7.2 tag) and run
   # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
   # real output, including 04's unchanged JVM caller calling the Wasm greeting-service.
   e2e-wasm:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     name: e2e (wasm components)
 
     steps:
@@ -319,7 +319,29 @@ jobs:
           dapr init --slim --runtime-version 1.17.7
           echo "$HOME/.dapr/bin" >> "$GITHUB_PATH"
 
-      # The plugin + the five dapr4s wasm artifacts (incl. dapr4s-wasm-linker, compiled from scala-wasm's release
+      # dapr4s (and .mill-version here) is on an unreleased Mill + mill-scalablytyped: dapr4s's
+      # scripts/upstream-snapshot.sh (at the pinned commit) builds and installs them, cached by its hash.
+      - name: Fetch dapr4s's upstream-snapshot.sh
+        id: snapshot
+        run: |
+          f="$RUNNER_TEMP/upstream-snapshot.sh"
+          curl -fsSL --retry 3 -o "$f" \
+            "https://raw.githubusercontent.com/sideeffffect/dapr4s/$DAPR4S_COMMIT/scripts/upstream-snapshot.sh"
+          chmod +x "$f"
+          echo "script=$f" >> "$GITHUB_OUTPUT"
+          echo "hash=$(sha256sum "$f" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Cache the upstream Mill + mill-scalablytyped snapshots
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/mill/download
+            ~/.ivy2/local/com.lihaoyi
+            ~/.ivy2/local/com.github.lolgab
+          key: upstream-snapshot-${{ steps.snapshot.outputs.hash }}
+      - name: Build the upstream Mill + mill-scalablytyped snapshots
+        run: ${{ steps.snapshot.outputs.script }}
+
+      # The plugin + the five dapr4s wasm artifacts (incl. dapr4s-wasm-linker_2.13, compiled from scala-wasm's release
       # commit + dapr4s's patch) land in ~/.ivy2/local and are a pure function of the pinned dapr4s commit: cache
       # them under it. On a miss, wasm/scripts/publish-dapr4s-wasm.sh clones dapr4s at that commit and runs its
       # Mill publishLocal. It must run before the first ./mill here (build.mill's header loads the plugin).
@@ -347,7 +369,7 @@ jobs:
 
   slides:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v5
