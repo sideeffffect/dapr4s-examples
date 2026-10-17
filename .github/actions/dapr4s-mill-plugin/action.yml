@@ -1,13 +1,38 @@
 name: dapr4s Mill plugin
 description: >-
   publishLocal the mill-dapr4s-wasm plugin that build.mill's header loads, from the dapr4s commit pinned in
-  wasm/dapr4s-wasm.env (cached per commit). Every job that runs ./mill needs it until the plugin is released.
+  wasm/dapr4s-wasm.env (cached per commit), and the unreleased Mill it is built against (.mill-version). Every
+  job that runs ./mill needs both until they are released.
 runs:
   using: composite
   steps:
     - name: Read the dapr4s pin (wasm/dapr4s-wasm.env)
       shell: bash
       run: grep -E '^[A-Z0-9_]+=' wasm/dapr4s-wasm.env >> "$GITHUB_ENV"
+    # dapr4s (and so .mill-version here) is on an unreleased Mill + mill-scalablytyped: dapr4s's
+    # scripts/upstream-snapshot.sh (at the pinned commit) builds them from pinned upstream commits and installs
+    # them locally. Cached by the script's hash.
+    - name: Fetch dapr4s's upstream-snapshot.sh
+      id: snapshot
+      shell: bash
+      run: |
+        f="$RUNNER_TEMP/upstream-snapshot.sh"
+        curl -fsSL --retry 3 -o "$f" \
+          "https://raw.githubusercontent.com/sideeffffect/dapr4s/$DAPR4S_COMMIT/scripts/upstream-snapshot.sh"
+        chmod +x "$f"
+        echo "script=$f" >> "$GITHUB_OUTPUT"
+        echo "hash=$(sha256sum "$f" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: Cache the upstream Mill + mill-scalablytyped snapshots
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/mill/download
+          ~/.ivy2/local/com.lihaoyi
+          ~/.ivy2/local/com.github.lolgab
+        key: upstream-snapshot-${{ steps.snapshot.outputs.hash }}
+    - name: Build the upstream Mill + mill-scalablytyped snapshots
+      shell: bash
+      run: ${{ steps.snapshot.outputs.script }}
     - name: Cache the dapr4s Mill plugin (~/.ivy2/local)
       id: cache
       uses: actions/cache@v5

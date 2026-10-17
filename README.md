@@ -107,7 +107,7 @@ published `dapr4s_sjs1_3` 3.0.0, whose Scala.js IR is linked into the component)
 (+ `-exports`; the Scala 2.13 WIT glue), `dapr4s-wasm-scalalib-overlay` and `dapr4s-wasm-linker`.
 
 **Prototype status.** The plugin and the artifacts are in
-[dapr4s PR #45](https://github.com/sideeffffect/dapr4s/pull/45) (not released yet), hence the
+[dapr4s PR #47](https://github.com/sideeffffect/dapr4s/pull/47) (not released yet), hence the
 `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (at the version `build.mill`'s header
 pins). Because `build.mill`'s header loads the plugin, **every** `./mill` command needs it:
 `wasm/scripts/publish-dapr4s-wasm.sh` (default `plugin`: only the plugin, needs just git and Java) once
