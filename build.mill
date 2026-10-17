@@ -355,7 +355,7 @@ object e2e extends BaseModule with TestModule.Munit:
 // ── WASI-component examples (18 / 19) ─────────────────────────────────────────
 // The same pure modules as the JVM examples (01-hello-state, 04-service-invocation), compiled by the
 // same Scala 3 nightly with the same flags for the `wasm` platform, plus a Wasm "shell" per example that
-// turns the pure code into a WASI component for dapr-wasm-components 0.7.2:
+// turns the pure code into a WASI component for dapr-wasm-components 0.7.5:
 //
 //   wasm.18-hello-state-shell          01's HelloStateApp.run behind an invoke route `run`
 //   wasm.19-service-invocation-shell   04's CalleeApp.app (greeting-service), called by 04's JVM caller

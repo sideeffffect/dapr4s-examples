@@ -392,7 +392,7 @@ E2E_SKIP_JS` so the `core` CI leg skips them and the dedicated `e2e-scala-js` jo
 ### WASI-component examples (18 / 19) — prototype
 
 `object wasm` in `build.mill` turns two existing pure modules into WASI **components** for
-[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.2 (scala-wasm fork of
+[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.5 (scala-wasm fork of
 Scala.js, `ModuleKind.WasmComponent`), run in `wasmtime serve` next to a real daprd. Plain Mill modules,
 built with dapr4s's Mill plugin `mill-dapr4s-wasm` (loaded by `build.mill`'s `//| mvnDeps` header). The
 whole repository is one Mill build.
@@ -438,10 +438,10 @@ whole repository is one Mill build.
   (`def app(using StateCapability): DaprApp`) + the fixed-name `object dapr4s.wasm.ComponentRoot { def
   component = X }` (a reactor has no `main`; a missing one is a link error). Codecs: upickle 3.3.1 like
   the JVM shells. Only state + inbound service invocation exist on the Wasm wall today.
-- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.2;`,
+- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.5;`,
   `wasm/wkg-config.toml` (upstream), `wasm/wkg.lock` committed. The plugin runs `wkg wit fetch` on a copy in
   `out/` (nothing lands in the source tree) and re-embeds that world into each component.
-- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.2 tag**
+- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.5 tag**
   (never `main`; cached in `~/.cache/dapr4s-examples/`), trusts its exit status and validates the output.
   Bump the tag together with `world.wit`/`wkg.lock` (newest WIT release).
 - **E2E** (`./mill wasm.e2e` → `wasm/scripts/e2e.sh`, CI job `e2e-wasm`): the Mill command builds both
