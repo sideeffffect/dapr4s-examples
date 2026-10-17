@@ -15,20 +15,20 @@ object Harness:
       .map(os.Path(_))
       .getOrElse(locateJar(module))
 
-  // Scans out/ for a pre-built assembly. Build the JARs first, e.g. `./mill __.assembly`
+  // Scans out/ for a pre-built assembly. Build the JARs first, e.g. `./mill _.assembly`
   // (or just the ones a run needs: `./mill 14-orders-shell.assembly + 14-pricing-shell.assembly`).
   // Mill names the output directory after the module: out/NN-<module>-shell/assembly.dest/out.jar
   private def locateJar(module: String): os.Path =
     val outDir = ProjectRoot / "out"
     if !os.exists(outDir) then
-      throw RuntimeException(s"No prebuilt jar for '$module' and out/ not found. Build first: ./mill __.assembly")
+      throw RuntimeException(s"No prebuilt jar for '$module' and out/ not found. Build first: ./mill _.assembly")
     os.list(outDir)
       .filter(_.last.endsWith(s"-$module-shell"))
       .map(_ / "assembly.dest" / "out.jar")
       .find(os.exists)
       .getOrElse(
         throw RuntimeException(
-          s"No prebuilt jar for '$module'. Build first: ./mill __.assembly " +
+          s"No prebuilt jar for '$module'. Build first: ./mill _.assembly " +
             s"(or just this one: ./mill 'NN-$module-shell.assembly')",
         ),
       )

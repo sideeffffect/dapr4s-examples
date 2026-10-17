@@ -389,6 +389,82 @@ E2E_SKIP_JS` so the `core` CI leg skips them and the dedicated `e2e-scala-js` jo
 (Node 25 + `npm ci` in `e2e/js` + `fastLinkJS` + `e2e.testForked '*Js*'`). Runtime npm deps
 (`@dapr/dapr`, `express`) live in `e2e/js/`.
 
+### WASI-component examples (18 / 19) — prototype
+
+`object wasm` in `build.mill` turns two existing pure modules into WASI **components** for
+[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.5 (scala-wasm fork of
+Scala.js, `ModuleKind.WasmComponent`), run in `wasmtime serve` next to a real daprd. Plain Mill modules,
+built with dapr4s's Mill plugin `mill-dapr4s-wasm` (loaded by `build.mill`'s `//| mvnDeps` header). The
+whole repository is one Mill build.
+
+| Component (Mill module) | Pure module (unchanged, shared with the JVM) | Wasm shell |
+|---|---|---|
+| `wasm.18-hello-state-shell` | `wasm.01-hello-state` = `01-hello-state/src` (`HelloStateApp.run`) | route `run` returns 01's report lines |
+| `wasm.19-service-invocation-shell` | `wasm.04-service-invocation` = `04-service-invocation/src` (`CalleeApp.app`) | the greeting-service; 04's JVM `caller` calls it |
+
+- **The plugin does all the build work**: `import dapr4s.millwasm.*`; the pure modules extend
+  `Dapr4sWasmModule` (the scala-wasm fork instead of mainline Scala.js + the dependency exclusions), the
+  shells `Dapr4sWasmComponentModule` (+ the patched linker, the stdlib overlay, the WIT trampolines,
+  `wkg wit fetch`, the component task `dapr4sComponent`). `object wasm` is itself the plugin's `WitModule`
+  (the shared `wasm/wit/world.wit`, `wasm/wkg-config.toml`, `wasm/wkg.lock`); the shells reuse its `wit`.
+  The fork is swapped only in the modules that mix the traits in, so 15–17 keep mainline Scala.js.
+  **No workaround lives in this build**: a component is the trait + one dependency (`dapr4s-wasm` at
+  `dapr4sWasmVersion`, the plugin's own version) + `ComponentRoot`.
+- **Never select the wasm modules with `__`**: `./mill __.assembly` / `__.fastLinkJS` would build/link the
+  components as plain JVM/JS modules. CI and the docs use `_` (top-level modules only); components are built
+  by `./mill wasm.e2e` or `./mill show wasm.<NN-...-shell>.dapr4sComponent`.
+- **Same pure code**: `wasm.01-hello-state` / `wasm.04-service-invocation` compile `01-hello-state/src` and
+  `04-service-invocation/src` with the same nightly (`ScalaVersion`) and flags as `PureModule`, against the
+  shared dapr4s API only. The pure modules expose a `StateCapability.Instance`-only entry
+  (`HelloStateApp.run`, `CalleeApp.app`) because the Wasm wall hands a component only state; the JVM
+  `apply()`s just open that instance and delegate. Keep it that way when editing 01/04.
+- **Classpath = Maven Central dapr4s + the dapr4s wasm artifacts**: `dapr4s_sjs1_3:3.0.0` (Central,
+  Scala.js IR, linked into the component by the scala-wasm linker; the pure modules depend on it
+  directly) + `dapr4s-wasm` (the adapters), `dapr4s-wasm-glue(-exports)`, `dapr4s-wasm-scalalib-overlay`,
+  `dapr4s-wasm-linker` and the plugin `mill-dapr4s-wasm`, which are **not released yet**: they come from a
+  `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (a commit of
+  [dapr4s PR #45](https://github.com/sideeffffect/dapr4s/pull/45)), at the version `build.mill`'s header pins.
+  **Bootstrapping**: the header loads the plugin, so EVERY `./mill` command fails until it is in
+  `~/.ivy2/local`. Run `wasm/scripts/publish-dapr4s-wasm.sh` (`plugin`, the default: only the plugin,
+  needs git + Java) once after cloning; `all` also publishes the wasm artifacts `./mill wasm.e2e` needs
+  (needs wkg, wasm-tools, wit-bindgen-scala). It clones dapr4s into `~/.cache/dapr4s-examples/dapr4s`, runs
+  its Mill `publishLocal` in release mode, and fails if the published version differs from the header. CI:
+  every job runs `.github/actions/dapr4s-mill-plugin` (plugin, cached per commit) before `./mill`; `e2e-wasm`
+  publishes `all` (cached per commit). **To bump the pin**: set `DAPR4S_COMMIT` and the header version
+  (dapr4s's version of that commit, `<tag>+<n>-<sha8>-SNAPSHOT`) together. **When the plugin and the
+  artifacts are released, pin the release version in the header, delete the publish script, the env file,
+  the composite action and the publish CI steps.**
+- **The component contract** (what a shell writes): `object X extends dapr4s.wasm.DaprComponent`
+  (`def app(using StateCapability): DaprApp`) + the fixed-name `object dapr4s.wasm.ComponentRoot { def
+  component = X }` (a reactor has no `main`; a missing one is a link error). Codecs: upickle 3.3.1 like
+  the JVM shells. Only state + inbound service invocation exist on the Wasm wall today.
+- **WIT only through OCI**: `wasm/wit/world.wit` = `include dapr-wasm-components:interfaces/app@0.7.5;`,
+  `wasm/wkg-config.toml` (upstream), `wasm/wkg.lock` committed. The plugin runs `wkg wit fetch` on a copy in
+  `out/` (nothing lands in the source tree) and re-embeds that world into each component.
+- **Composition**: `wasm/scripts/compose.sh` runs the upstream `compose.sh` pinned at the **v0.7.5 tag**
+  (never `main`; cached in `~/.cache/dapr4s-examples/`), trusts its exit status and validates the output.
+  Bump the tag together with `world.wit`/`wkg.lock` (newest WIT release).
+- **E2E** (`./mill wasm.e2e` → `wasm/scripts/e2e.sh`, CI job `e2e-wasm`): the Mill command builds both
+  components and 04's caller jar, copies the components into `out/wasm/e2e.dest/components` and runs the
+  script there (logs: `out/wasm/e2e.dest/logs`). Redis in Docker (`localhost:26490`), daprd via `dapr run`
+  (slim), `wasmtime serve`; asserts 18's report lines (the same as `Example01HelloStateTest`), 19's
+  greet/stats/404 (the same cases as `Example04ServiceInvocationTest`) and the output of 04's JVM caller
+  against the Wasm callee.
+- **Formatting**: the wasm sources are ordinary module sources, so `checkFormatAll` covers them.
+- **Tools** (CI pins the same): JDK 25, Docker, dapr CLI 1.15.1 + daprd 1.17.7 (`dapr init --slim`),
+  wasm-tools 1.261.0, wasmtime 49.0.2, wkg 0.16.1, wac 0.10.0, wit-bindgen-scala 0.1.0 (`cargo install`;
+  only for publishing the dapr4s wasm artifacts), python3, curl.
+- **Upstream blockers** (worked around in dapr4s, see its AGENTS.md "Wasm component layer rules", and
+  being fixed upstream): no WIT codegen in mainline Scala 3 (2.13 glue); the linker cannot pass params
+  through linear memory (> 16 flat params, both directions: `dapr4s-wasm-linker`,
+  [scala-wasm#268](https://github.com/scala-wasm/scala-wasm/pull/268)); the linker drops WIT aliases (WIT
+  re-embed, [scala-wasm#269](https://github.com/scala-wasm/scala-wasm/pull/269)); the fork's and mainline's
+  core libraries do not evict each other (exclusions, [scala-wasm#271](https://github.com/scala-wasm/scala-wasm/pull/271));
+  the nightly stdlib uses JS interop (`dapr4s-wasm-scalalib-overlay`); Mill has no Scala.js organization
+  setting / `ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783)) or
+  WIT-bindings task ([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)); no `main` in a reactor
+  (`ComponentRoot`).
+
 > The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
 > SigNoz by asserting the funnel collector's own pipeline counters
 > (`otelcol_exporter_sent_spans` / `_metric_points` / `_log_records` > 0) — no SigNoz
@@ -401,7 +477,7 @@ E2E_SKIP_JS` so the `core` CI leg skips them and the dedicated `e2e-scala-js` jo
 ## Build
 
 ```
-mill __.compile                                           # compile everything
+mill _.compile                                            # compile everything (top-level modules)
 mill 01-hello-state-shell.run                           # run a single-main shell
 mill 06-actors-shell.runMain actors.actorApp            # run a named main in a multi-main shell
 ```
@@ -420,11 +496,14 @@ via `-De2e.jar.<name>=…` system properties (see `forkArgs`).
 
 Run the full suite (assemblies first, then the forked tests):
 ```
-./mill __.assembly        # build every shell's assembly JAR
+./mill _.assembly        # build every shell's assembly JAR
 ./mill e2e.testForked     # run the e2e suites (Docker required)
 ```
 
-This is exactly what CI runs (`.github/workflows/e2e.yml`, job `e2e`).
+This is exactly what CI runs (`.github/workflows/e2e.yml`, job `e2e`). The WASI-component
+examples have their own entry point and CI job: `./mill wasm.e2e` / `e2e-wasm` (see
+"WASI-component examples (18 / 19)"). Every `./mill` command first needs the dapr4s Mill plugin in
+`~/.ivy2/local`: `wasm/scripts/publish-dapr4s-wasm.sh` once (see there).
 
 ## Slides
 
