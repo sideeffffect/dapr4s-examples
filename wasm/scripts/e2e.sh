@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end test of the WASI-component examples. For each example component:
-#   1. compose it with the dapr-wasm-components 0.7.2 wasi-http providers (compose.sh);
+#   1. compose it with the dapr-wasm-components 0.7.5 wasi-http providers (compose.sh);
 #   2. run it in `wasmtime serve` next to a real daprd (`dapr run`) with a Redis state store (Docker);
 #   3. call it through daprd's service-invocation API and assert the real output:
 #      18-hello-state-shell        `run` -> the same report lines as the JVM example 01
@@ -65,7 +65,7 @@ start() {
   grpc="$5"
   "$here/compose.sh" "$components/$c.wasm" "$components/composed-$c.wasm" >"$logs/compose-$c.log" 2>&1 ||
     fail "$c: compose"
-  echo "$c: composed with the dapr-wasm-components 0.7.2 wasi-http providers"
+  echo "$c: composed with the dapr-wasm-components 0.7.5 wasi-http providers"
   docker exec "$redis" redis-cli FLUSHALL >/dev/null
   dapr run --app-id "$app_id" --app-port "$app_port" --dapr-http-port "$http" --dapr-grpc-port "$grpc" \
     --resources-path "$wasm/components" -- \

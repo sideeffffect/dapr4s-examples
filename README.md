@@ -65,7 +65,7 @@ with its own daprd sidecar — exactly like the JVM examples, but `node main.js`
 ### WASI-component examples (18 / 19) — prototype
 
 dapr4s is growing a third platform: a dapr4s app built as a **WASI component** for
-[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.2, with the
+[dapr-wasm-components](https://github.com/sideeffffect/dapr-wasm-components) 0.7.5, with the
 [scala-wasm](https://github.com/scala-wasm/scala-wasm) fork of Scala.js (`ModuleKind.WasmComponent`).
 Examples 18 and 19 compile the **unchanged pure modules of 01 and 04** into components, compose
 them with the dapr-wasm-components wasi-http providers and run them in `wasmtime serve` next to a
@@ -82,7 +82,7 @@ The components are ordinary modules of this Mill build (`object wasm` in `build.
 `wasm.04-service-invocation` (01's and 04's pure sources, recompiled for the wasm platform).
 `./mill show wasm.18-hello-state-shell.dapr4sComponent` builds one component and prints its path.
 `./mill wasm.e2e` builds both and runs `wasm/scripts/e2e.sh`: compose (dapr-wasm-components `compose.sh` at
-the `v0.7.2` tag), `dapr run … -- wasmtime serve`, and assert the real responses (the same assertions as
+the `v0.7.5` tag), `dapr run … -- wasmtime serve`, and assert the real responses (the same assertions as
 the JVM e2e of 01 and 04). Logs: `out/wasm/e2e.dest/logs/`.
 
 **What a component needs.** dapr4s's Mill plugin `mill-dapr4s-wasm`, one dependency and one fixed-name

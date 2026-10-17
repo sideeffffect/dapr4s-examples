@@ -248,7 +248,7 @@ jobs:
   # dapr4s-wasm-linker) come from a publishLocal of the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of
   # https://github.com/sideeffffect/dapr4s/pull/47). Once they are released, the pin becomes a release version and
   # the dapr4s publish step goes away.
-  # The components are composed with dapr-wasm-components 0.7.2 (compose.sh at the v0.7.2 tag) and run
+  # The components are composed with dapr-wasm-components 0.7.5 (compose.sh at the v0.7.5 tag) and run
   # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
   # real output, including 04's unchanged JVM caller calling the Wasm greeting-service.
   e2e-wasm:
