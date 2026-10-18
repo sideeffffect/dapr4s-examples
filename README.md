@@ -121,7 +121,7 @@ plugin re-embeds the WIT world, [scala-wasm#269](https://github.com/scala-wasm/s
 fork's and mainline's core libraries do not evict each other (the exclusions,
 [scala-wasm#271](https://github.com/scala-wasm/scala-wasm/pull/271)); JS interop in the nightly's Scala.js
 stdlib (`dapr4s-wasm-scalalib-overlay`); Mill knows neither the fork's organization nor
-`ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783)) nor WIT bindings
+`ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), merged but not released) nor WIT bindings
 ([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)).
 
 **Prerequisites**: JDK 25, Docker, the dapr CLI 1.15.1 + daprd 1.17.7 (`dapr init --slim`),

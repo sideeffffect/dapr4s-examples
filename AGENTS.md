@@ -120,8 +120,8 @@ Source files live under `src/<package>/` within each module directory, e.g.:
 - **Dapr CLI** and runtime: https://docs.dapr.io/getting-started/install-dapr-cli/
 - **Redis** on `localhost:6379` — `docker run -d -p 6379:6379 redis:7`
 - **JVM ≥ 21** — `java -version`
-- **Mill 1.3.0-18-28026a (unreleased)** — use the `./mill` launcher (it reads `.mill-version`). It is
-  Mill main + [com-lihaoyi/mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), the Mill the dapr4s
+- **Mill 1.3.0-20-56dcdf (unreleased)** — use the `./mill` launcher (it reads `.mill-version`). It is
+  Mill main at the merge of [com-lihaoyi/mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), the Mill the dapr4s
   plugin is built against. `wasm/scripts/publish-dapr4s-wasm.sh` installs it (it runs dapr4s's
   `scripts/upstream-snapshot.sh`); without it, run that dapr4s script once yourself. Mill >= 1.3.0 is
   required for the Scala.js JSPI switch (see "Scala.js examples").
@@ -464,7 +464,7 @@ whole repository is one Mill build.
   re-embed, [scala-wasm#269](https://github.com/scala-wasm/scala-wasm/pull/269)); the fork's and mainline's
   core libraries do not evict each other (exclusions, [scala-wasm#271](https://github.com/scala-wasm/scala-wasm/pull/271));
   the nightly stdlib uses JS interop (`dapr4s-wasm-scalalib-overlay`); Mill has no Scala.js organization
-  setting / `ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783)) or
+  setting / `ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), merged but not released) or
   WIT-bindings task ([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)); no `main` in a reactor
   (`ComponentRoot`).
 
