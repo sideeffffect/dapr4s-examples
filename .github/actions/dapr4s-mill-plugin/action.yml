@@ -1,0 +1,20 @@
+name: dapr4s Mill plugin
+description: >-
+  publishLocal the mill-dapr4s-wasm plugin that build.mill's header loads, from the dapr4s commit pinned in
+  wasm/dapr4s-wasm.env (cached per commit). Every job that runs ./mill needs it until the plugin is released.
+runs:
+  using: composite
+  steps:
+    - name: Read the dapr4s pin (wasm/dapr4s-wasm.env)
+      shell: bash
+      run: grep -E '^[A-Z0-9_]+=' wasm/dapr4s-wasm.env >> "$GITHUB_ENV"
+    - name: Cache the dapr4s Mill plugin (~/.ivy2/local)
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.ivy2/local/com.github.sideeffffect/mill-dapr4s-wasm_mill1_3
+        key: mill-dapr4s-wasm-${{ env.DAPR4S_COMMIT }}
+    - name: Publish the dapr4s Mill plugin locally (cache miss)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: wasm/scripts/publish-dapr4s-wasm.sh plugin
