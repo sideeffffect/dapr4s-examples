@@ -58,7 +58,7 @@ if [[ ! -d "$dir/.git" ]]; then
 fi
 git -C "$dir" fetch --quiet --tags origin "$DAPR4S_COMMIT" 2>/dev/null || git -C "$dir" fetch --quiet --tags origin
 git -C "$dir" checkout --quiet --force "$DAPR4S_COMMIT"
-# dapr4s builds with an unreleased Mill + mill-scalablytyped: install them first (idempotent).
+# dapr4s builds with an unreleased mill-scalablytyped: install it first (idempotent).
 "$dir/scripts/upstream-snapshot.sh"
 args=()
 for m in "${modules[@]}"; do

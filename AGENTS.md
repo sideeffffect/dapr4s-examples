@@ -120,11 +120,11 @@ Source files live under `src/<package>/` within each module directory, e.g.:
 - **Dapr CLI** and runtime: https://docs.dapr.io/getting-started/install-dapr-cli/
 - **Redis** on `localhost:6379` — `docker run -d -p 6379:6379 redis:7`
 - **JVM ≥ 21** — `java -version`
-- **Mill 1.3.0-20-56dcdf (unreleased)** — use the `./mill` launcher (it reads `.mill-version`). It is
-  Mill main at the merge of [com-lihaoyi/mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), the Mill the dapr4s
-  plugin is built against. `wasm/scripts/publish-dapr4s-wasm.sh` installs it (it runs dapr4s's
-  `scripts/upstream-snapshot.sh`); without it, run that dapr4s script once yourself. Mill >= 1.3.0 is
-  required for the Scala.js JSPI switch (see "Scala.js examples").
+- **Mill 1.3.1** — use the `./mill` launcher (it reads `.mill-version`). It is the Mill the dapr4s
+  plugin is built against, and the first release with
+  [com-lihaoyi/mill#7783](https://github.com/com-lihaoyi/mill/pull/7783) (Scala.js organization +
+  `ModuleKind.WasmComponent`). Mill >= 1.3.0 is required for the Scala.js JSPI switch (see "Scala.js
+  examples").
 - **dapr4s published locally** (run once from the dapr4s repo):
   ```
   cd ../scala-safe-dapr
@@ -463,10 +463,10 @@ whole repository is one Mill build.
   [scala-wasm#268](https://github.com/scala-wasm/scala-wasm/pull/268)); the linker drops WIT aliases (WIT
   re-embed, [scala-wasm#269](https://github.com/scala-wasm/scala-wasm/pull/269)); the fork's and mainline's
   core libraries do not evict each other (exclusions, [scala-wasm#271](https://github.com/scala-wasm/scala-wasm/pull/271));
-  the nightly stdlib uses JS interop (`dapr4s-wasm-scalalib-overlay`); Mill has no Scala.js organization
-  setting / `ModuleKind.WasmComponent` ([mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), merged but not released) or
-  WIT-bindings task ([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)); no `main` in a reactor
-  (`ComponentRoot`).
+  the nightly stdlib uses JS interop (`dapr4s-wasm-scalalib-overlay`); Mill has no WIT-bindings task
+  ([mill#7784](https://github.com/com-lihaoyi/mill/pull/7784)); no `main` in a reactor (`ComponentRoot`).
+  (The Scala.js organization setting and `ModuleKind.WasmComponent`,
+  [mill#7783](https://github.com/com-lihaoyi/mill/pull/7783), are released in Mill 1.3.1 and used.)
 
 > The E2E (`Example14ObservabilityTest`) proves all three OpenTelemetry signals reach
 > SigNoz by asserting the funnel collector's own pipeline counters
