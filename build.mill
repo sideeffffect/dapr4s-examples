@@ -1,4 +1,4 @@
-//| mvnDeps: ["com.github.sideeffffect::mill-dapr4s-wasm::3.0.0+34-3dfff3e3-SNAPSHOT"]
+//| mvnDeps: ["com.github.sideeffffect::mill-dapr4s-wasm::3.0.0+35-0048d5b0-SNAPSHOT"]
 // The dapr4s Mill plugin for WASI components (examples 18/19, `object wasm` below). Pinned to a dapr4s commit
 // (wasm/dapr4s-wasm.env) until it is released: run wasm/scripts/publish-dapr4s-wasm.sh once before the first
 // `./mill` (it publishLocal's the plugin from that commit; `all` also the wasm artifacts the components need).
