@@ -104,11 +104,25 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ~/.docker-image-cache
-          key: docker-images-v1-${{ steps.imageset.outputs.hash }}
+          key: docker-images-v2-${{ steps.imageset.outputs.hash }}
 
       - name: Load cached images
         if: steps.imgcache.outputs.cache-hit == 'true'
-        run: docker load -i ~/.docker-image-cache/images.tar
+        run: |
+          docker load -i ~/.docker-image-cache/images.tar
+          # A loaded image can still be unusable: `docker save` of a multi-platform image on the runner's
+          # containerd image store can leave out the platform's config blob, and `docker create` then fails
+          # with "failed to read config content: NotFound" (seen for ghcr.io/diagridio/diagrid-dashboard).
+          # Probe every image and re-pull the broken ones, so a bad tarball costs a pull, not a red run.
+          while read -r img; do
+            if cid=$(docker create "$img" 2>/dev/null); then
+              docker rm "$cid" >/dev/null
+            else
+              echo "Cached image $img is unusable: pulling it"
+              docker rmi -f "$img" >/dev/null 2>&1 || true
+              docker pull -q "$img"
+            fi
+          done < /tmp/ci-images.txt
 
       # Optional: authenticate to Docker Hub to lift the anonymous pull-rate limit on
       # the cold pull. No-op unless the DOCKERHUB_USERNAME/DOCKERHUB_TOKEN repo secrets
@@ -128,7 +142,9 @@ jobs:
           # Pull concurrently to cut wall-clock, then snapshot all images into a single
           # tarball so shared base layers (e.g. the eclipse-temurin base) are stored once.
           xargs -P 4 -I{} docker pull -q {} < /tmp/ci-images.txt
-          docker save $(tr '\n' ' ' < /tmp/ci-images.txt) -o ~/.docker-image-cache/images.tar
+          # Save the runner's platform only (see "Load cached images"); older Docker has no --platform.
+          docker save --platform linux/amd64 $(tr '\n' ' ' < /tmp/ci-images.txt) -o ~/.docker-image-cache/images.tar ||
+            docker save $(tr '\n' ' ' < /tmp/ci-images.txt) -o ~/.docker-image-cache/images.tar
 
       # Each leg builds only the assembly JARs its suites need (e2e.testForked no
       # longer force-builds every example — see build.mill forkArgs).
@@ -166,7 +182,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ~/.docker-image-cache
-          key: docker-images-v1-${{ steps.imageset.outputs.hash }}
+          key: docker-images-v2-${{ steps.imageset.outputs.hash }}
 
       - name: Upload test results on failure
         if: failure()
