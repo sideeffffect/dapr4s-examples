@@ -19,39 +19,48 @@ case class HelloStateResult(
 // The whole capability scope is established here: DaprCapability.state opens
 // a StateCapability.Instance bound to that store, used throughout.  JsonCodec[Note] is
 // passed from the shell so macro derivation stays out of this module.
+//
+// `run` needs only the StateCapability.Instance, not the whole DaprCapability: the
+// WASI-component twin (wasm/18-hello-state-shell) gets just that instance from the
+// dapr4s wasm wall and calls the very same `run`.
 // ─────────────────────────────────────────────────────────────────────────────
+
+val NoteStore = StateStoreName("statestore")
 
 object HelloStateApp:
   def apply()(using DaprCapability, JsonCodec[Note]): HelloStateResult =
-    DaprCapability.state(StateStoreName("statestore")):
-      val key = StateStoreKey("hello-note")
+    DaprCapability.state(NoteStore):
+      run()
 
-      StateCapability.Instance.save(key, Note("Hello from dapr4s!", 1))
-      val saved = StateCapability.Instance.get[Note](key)
+  def run()(using StateCapability.Instance, JsonCodec[Note]): HelloStateResult =
+    val key = StateStoreKey("hello-note")
 
-      val entry = StateCapability.Instance.getWithETag[Note](key)
-      val etagConflict: Option[ETagMismatchException] =
-        (entry.value, entry.etag) match
-          case (Some(n), Some(etag)) =>
-            val next = n.copy(text = "Updated!", revision = n.revision + 1)
-            StateCapability.Instance.saveWithETag(key, next, etag)
-          case _ => None
+    StateCapability.Instance.save(key, Note("Hello from dapr4s!", 1))
+    val saved = StateCapability.Instance.get[Note](key)
 
-      val afterUpdate = StateCapability.Instance.get[Note](key)
+    val entry = StateCapability.Instance.getWithETag[Note](key)
+    val etagConflict: Option[ETagMismatchException] =
+      (entry.value, entry.etag) match
+        case (Some(n), Some(etag)) =>
+          val next = n.copy(text = "Updated!", revision = n.revision + 1)
+          StateCapability.Instance.saveWithETag(key, next, etag)
+        case _ => None
 
-      StateCapability.Instance.transaction(
-        Seq(
-          StateOp.UpsertOp[Note](StateStoreKey("note-a"), Note("A", 1)),
-          StateOp.UpsertOp[Note](StateStoreKey("note-b"), Note("B", 1)),
-          StateOp.DeleteOp(key),
-        ),
-      )
+    val afterUpdate = StateCapability.Instance.get[Note](key)
 
-      val txnNoteA = StateCapability.Instance.get[Note](StateStoreKey("note-a"))
-      val txnNoteB = StateCapability.Instance.get[Note](StateStoreKey("note-b"))
-      val txnOriginal = StateCapability.Instance.get[Note](key)
+    StateCapability.Instance.transaction(
+      Seq(
+        StateOp.UpsertOp[Note](StateStoreKey("note-a"), Note("A", 1)),
+        StateOp.UpsertOp[Note](StateStoreKey("note-b"), Note("B", 1)),
+        StateOp.DeleteOp(key),
+      ),
+    )
 
-      val bulkMap = StateCapability.Instance.getBulk[Note](Seq(StateStoreKey("note-a"), StateStoreKey("note-b")))
-      val bulk = bulkMap.map((k, e) => (k.value, e.value)).toSeq
+    val txnNoteA = StateCapability.Instance.get[Note](StateStoreKey("note-a"))
+    val txnNoteB = StateCapability.Instance.get[Note](StateStoreKey("note-b"))
+    val txnOriginal = StateCapability.Instance.get[Note](key)
 
-      HelloStateResult(saved, etagConflict, afterUpdate, txnNoteA, txnNoteB, txnOriginal, bulk)
+    val bulkMap = StateCapability.Instance.getBulk[Note](Seq(StateStoreKey("note-a"), StateStoreKey("note-b")))
+    val bulk = bulkMap.map((k, e) => (k.value, e.value)).toSeq
+
+    HelloStateResult(saved, etagConflict, afterUpdate, txnNoteA, txnNoteB, txnOriginal, bulk)

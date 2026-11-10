@@ -1,0 +1,14 @@
+# Redis state store for the WASI-component examples: Redis runs in Docker on localhost:26490
+# (scripts/e2e.sh), daprd runs on the host (`dapr run`, `dapr init --slim`).
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: localhost:26490
+    - name: redisPassword
+      value: ""

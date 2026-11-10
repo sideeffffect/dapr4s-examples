@@ -49,6 +49,9 @@ def stats()(using StateCapability.Instance.ReadOnly, JsonCodec[ServiceStats]): S
   val s = StateCapability.Instance.ReadOnly.get[ServiceStats](StatsKey).getOrElse(ServiceStats(0, Nil))
   StatsResponse(s.count, s.languages)
 
+// `app` needs only the StateCapability.Instance: the WASI-component twin
+// (wasm/19-service-invocation-shell) gets just that instance from the dapr4s wasm wall
+// and serves the very same DaprApp, so this module's caller can call either callee.
 object CalleeApp:
   def apply()(using
       DaprCapability,
@@ -59,12 +62,22 @@ object CalleeApp:
       JsonCodec[Unit],
   ): DaprApp =
     DaprCapability.state(StatStore):
-      DaprApp(invokeRoutes =
-        List(
-          InvokeRoute[GreetRequest, GreetResponse](InvokeMethodName("greet"))(greet),
-          InvokeRoute[Unit, StatsResponse](InvokeMethodName("stats"))(_ => stats()),
-        ),
-      )
+      app()
+
+  def app()(using
+      StateCapability.Instance,
+      JsonCodec[ServiceStats],
+      JsonCodec[GreetRequest],
+      JsonCodec[GreetResponse],
+      JsonCodec[StatsResponse],
+      JsonCodec[Unit],
+  ): DaprApp =
+    DaprApp(invokeRoutes =
+      List(
+        InvokeRoute[GreetRequest, GreetResponse](InvokeMethodName("greet"))(greet),
+        InvokeRoute[Unit, StatsResponse](InvokeMethodName("stats"))(_ => stats()),
+      ),
+    )
 
 // ── Caller ────────────────────────────────────────────────────────────────────
 
