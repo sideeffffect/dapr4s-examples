@@ -26,10 +26,11 @@ jobs:
             ~/.cache/coursier
             ~/.cache/mill
             out
-          key: mill-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          # The Mill version leads the key and every restore key: an out/ written by another Mill is never restored.
+          key: mill-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-${{ hashFiles('**/*.scala') }}
           restore-keys: |
-            mill-${{ hashFiles('.mill-version', 'build.mill') }}-
-            mill-
+            mill-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-
+            mill-${{ hashFiles('.mill-version') }}-
 
       # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
       - uses: ./.github/actions/dapr4s-mill-plugin
@@ -75,10 +76,11 @@ jobs:
             ~/.cache/coursier
             ~/.cache/mill
             out
-          key: mill-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          # The Mill version leads the key and every restore key: an out/ written by another Mill is never restored.
+          key: mill-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-${{ hashFiles('**/*.scala') }}
           restore-keys: |
-            mill-${{ hashFiles('.mill-version', 'build.mill') }}-
-            mill-
+            mill-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-
+            mill-${{ hashFiles('.mill-version') }}-
 
       # ── Container image cache ────────────────────────────────────────────────
       # The E2E suite boots every example's Docker stack via Testcontainers. Cold
@@ -202,10 +204,11 @@ jobs:
             ~/.cache/coursier
             ~/.cache/mill
             out
-          key: mill-js-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          # The Mill version leads the key and every restore key: an out/ written by another Mill is never restored.
+          key: mill-js-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-${{ hashFiles('**/*.scala') }}
           restore-keys: |
-            mill-js-${{ hashFiles('.mill-version', 'build.mill') }}-
-            mill-js-
+            mill-js-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-
+            mill-js-${{ hashFiles('.mill-version') }}-
 
       # build.mill's header loads the dapr4s Mill plugin (examples 18/19): publishLocal it first.
       - uses: ./.github/actions/dapr4s-mill-plugin
@@ -275,10 +278,11 @@ jobs:
             ~/.cache/coursier
             ~/.cache/mill
             out
-          key: mill-wasm-${{ hashFiles('.mill-version', 'build.mill') }}-${{ hashFiles('**/*.scala') }}
+          # The Mill version leads the key and every restore key: an out/ written by another Mill is never restored.
+          key: mill-wasm-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-${{ hashFiles('**/*.scala') }}
           restore-keys: |
-            mill-wasm-${{ hashFiles('.mill-version', 'build.mill') }}-
-            mill-wasm-
+            mill-wasm-${{ hashFiles('.mill-version') }}-${{ hashFiles('build.mill') }}-
+            mill-wasm-${{ hashFiles('.mill-version') }}-
 
       # Same tool versions as dapr4s's own wasm CI leg.
       - name: Install wasm tools (wasm-tools, wasmtime, wkg, wac)
