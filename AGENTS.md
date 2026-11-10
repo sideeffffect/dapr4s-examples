@@ -426,7 +426,8 @@ whole repository is one Mill build.
   directly) + `dapr4s-wasm` (the adapters), `dapr4s-wasm-glue(-exports)`, `dapr4s-wasm-scalalib-overlay`,
   `dapr4s-wasm-linker` and the plugin `mill-dapr4s-wasm`, which are **not released yet**: they come from a
   `publishLocal` of the dapr4s commit pinned in `wasm/dapr4s-wasm.env` (a commit of
-  [dapr4s PR #47](https://github.com/sideeffffect/dapr4s/pull/47)), at the version `build.mill`'s header pins.
+  [dapr4s PR #44](https://github.com/sideeffffect/dapr4s/pull/44), the Wasm prototype on dapr4s's Mill build), at the
+  version `build.mill`'s header pins.
   **Bootstrapping**: the header loads the plugin, so EVERY `./mill` command fails until it is in
   `~/.ivy2/local`. Run `wasm/scripts/publish-dapr4s-wasm.sh` (`plugin`, the default: only the plugin,
   needs git + Java) once after cloning; `all` also publishes the wasm artifacts `./mill wasm.e2e` needs

@@ -265,7 +265,7 @@ jobs:
   # Mill plugin mill-dapr4s-wasm. dapr4s itself comes from Maven Central (dapr4s_sjs1_3 3.0.0); the plugin and the
   # small dapr4s wasm artifacts (dapr4s-wasm, dapr4s-wasm-glue(-exports), dapr4s-wasm-scalalib-overlay,
   # dapr4s-wasm-linker) come from a publishLocal of the dapr4s commit PINNED in wasm/dapr4s-wasm.env (a commit of
-  # https://github.com/sideeffffect/dapr4s/pull/47). Once they are released, the pin becomes a release version and
+  # https://github.com/sideeffffect/dapr4s/pull/44). Once they are released, the pin becomes a release version and
   # the dapr4s publish step goes away.
   # The components are composed with dapr-wasm-components 0.7.5 (compose.sh at the v0.7.5 tag) and run
   # in `wasmtime serve` next to a real daprd (dapr CLI, slim) + Redis (Docker); the e2e asserts their
